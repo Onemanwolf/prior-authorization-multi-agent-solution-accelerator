@@ -1,0 +1,39 @@
+name: Azure Template Validation
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+  pull-requests: write
+
+jobs:
+  template_validation_job:
+    runs-on: ubuntu-latest
+    environment: production
+    name: template validation
+    steps:
+      # Step 1: Checkout the code from your repository
+      - name: Checkout code
+        uses: actions/checkout@v6
+
+      # Step 2: Validate the Azure template using microsoft/template-validation-action
+      - name: Validate Azure Template
+        uses: microsoft/template-validation-action@bae4895d0a8abd4f0d5aad68ae8647b3027f4c91
+        with:
+          validateAzd: false
+          useDevContainer: false
+          validatePaths: "README.md, LICENSE, SECURITY.md, CONTRIBUTING.md, CODE_OF_CONDUCT.md, ISSUE_TEMPLATE, azure.yaml, infra, .devcontainer"
+          securityAction: "None"
+        id: validation
+        env:
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Step 3: Print the result of the validation
+      - name: print result
+        run: cat ${{ steps.validation.outputs.resultFile }}

@@ -1,0 +1,45 @@
+{
+  "name": "Prior Auth MAF",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "20"
+    },
+    "ghcr.io/devcontainers/features/azure-cli:1": {
+      "installUsingScript": false,
+      "version": "latest"
+    },
+    "ghcr.io/azure/azure-dev/azd:latest": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.debugpy",
+        "dbaeumer.vscode-eslint",
+        "esbenp.prettier-vscode",
+        "bradlc.vscode-tailwindcss",
+        "ms-azuretools.vscode-docker",
+        "ms-azuretools.azure-dev",
+        "ms-azuretools.vscode-bicep",
+        "ms-vscode.azure-account",
+        "GitHub.vscode-github-actions",
+        "redhat.vscode-yaml",
+        "yzhang.markdown-all-in-one"
+      ],
+      "settings": {
+        "python.defaultInterpreterPath": "/usr/local/bin/python",
+        "python.linting.enabled": true
+      }
+    }
+  },
+  "forwardPorts": [3000, 8000],
+  "postCreateCommand": "bash ./.devcontainer/setupEnv.sh",
+  "postAttachCommand": "bash .devcontainer/welcome.sh",
+  "remoteEnv": {
+    "PYTHONUNBUFFERED": "True"
+  },
+  "hostRequirements": {
+    "memory": "8gb"
+  }
+}

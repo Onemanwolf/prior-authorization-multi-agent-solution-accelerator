@@ -1,0 +1,16 @@
+.git
+.venv
+venv
+__pycache__
+*.pyc
+node_modules
+frontend/dist
+frontend/.next
+frontend/out
+backend/.env
+nul
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+tmpclaude-*

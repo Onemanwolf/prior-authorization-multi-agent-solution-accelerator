@@ -1,0 +1,165 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1320" font-family="Segoe UI, Inter, Arial, sans-serif">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F6F9FE"/>
+      <stop offset="100%" stop-color="#EDF3FA"/>
+    </linearGradient>
+    <linearGradient id="header" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#0078D4"/>
+      <stop offset="100%" stop-color="#005A9E"/>
+    </linearGradient>
+    <linearGradient id="backend" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#0F6CBD"/>
+      <stop offset="100%" stop-color="#005A9E"/>
+    </linearGradient>
+    <linearGradient id="agent" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#7657D8"/>
+      <stop offset="100%" stop-color="#563BEE"/>
+    </linearGradient>
+    <linearGradient id="foundryBand" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#F7F3FF"/>
+      <stop offset="100%" stop-color="#F1ECFF"/>
+    </linearGradient>
+    <linearGradient id="success" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#108A17"/>
+      <stop offset="100%" stop-color="#0B6511"/>
+    </linearGradient>
+    <linearGradient id="decision" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#D83B01"/>
+      <stop offset="100%" stop-color="#A42600"/>
+    </linearGradient>
+    <filter id="soft" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="4" stdDeviation="8" flood-color="#0B1F3A" flood-opacity="0.12"/>
+    </filter>
+    <filter id="softSm" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0B1F3A" flood-opacity="0.08"/>
+    </filter>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M0,0 L10,5 L0,10 Z" fill="#93A7C4"/>
+    </marker>
+    <linearGradient id="fas-p0" x1="58.7816" y1="35.2535" x2="-29.0637" y2="98.5717" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4F42FD"/>
+      <stop offset="0.8" stop-color="#7274FF"/>
+    </linearGradient>
+    <linearGradient id="fas-p1" x1="153.77" y1="171.821" x2="79.7272" y2="213.291" gradientUnits="userSpaceOnUse">
+      <stop offset="0.25" stop-color="#4F42FD"/>
+      <stop offset="1" stop-color="#2C08AC"/>
+    </linearGradient>
+    <linearGradient id="fas-p2" x1="244.255" y1="176.092" x2="86.7278" y2="202.117" gradientUnits="userSpaceOnUse">
+      <stop offset="0.2" stop-color="#7274FF"/>
+      <stop offset="1" stop-color="#4F42FD"/>
+    </linearGradient>
+    <linearGradient id="fas-p3" x1="153.782" y1="109.458" x2="239.55" y2="156.652" gradientUnits="userSpaceOnUse">
+      <stop offset="0.25" stop-color="#4F42FD"/>
+      <stop offset="1" stop-color="#2C08AC"/>
+    </linearGradient>
+    <linearGradient id="fas-p4" x1="278.882" y1="116.176" x2="164.18" y2="3.08385" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#4F42FD"/>
+      <stop offset="0.8" stop-color="#7274FF"/>
+    </linearGradient>
+    <linearGradient id="fas-p5" x1="109.195" y1="139.686" x2="109.195" y2="49.1748" gradientUnits="userSpaceOnUse">
+      <stop offset="0.25" stop-color="#4F42FD"/>
+      <stop offset="1" stop-color="#2C08AC"/>
+    </linearGradient>
+    <g id="foundryIcon">
+      <path d="M88.51 220.435L52.5 199.645C44.14 194.815 39 185.905 39 176.265V103.705C39 94.0551 44.15 85.1451 52.5 80.3251L72 69.0751C73.33 68.3051 75 69.2651 75 70.8051V197.255C75.03 202.005 76.32 206.575 78.62 210.555C80.95 214.585 84.32 218.025 88.51 220.445V220.435Z" fill="url(#fas-p0)"/>
+      <path d="M153.77 160.235V182.745C153.77 192.395 148.63 201.305 140.27 206.135L115.5 220.435C107.15 225.255 96.86 225.265 88.5 220.435C84.31 218.025 80.95 214.585 78.61 210.545C76.31 206.565 75.03 202.005 75 197.245V191.895C75.02 196.485 80.02 199.365 84 197.055L150.77 158.505C152.1 157.735 153.77 158.695 153.77 160.235Z" fill="url(#fas-p1)"/>
+      <path d="M239.54 146.735V188.315C239.54 197.965 234.39 206.875 226.04 211.695L163.2 247.975C154.85 252.795 144.55 252.795 136.2 247.975L116.7 236.715C115.37 235.945 115.37 234.025 116.7 233.255L226.21 170.035C230.31 167.635 233.62 164.235 235.92 160.245C238.25 156.215 239.54 151.575 239.54 146.735Z" fill="url(#fas-p2)"/>
+      <path d="M154.78 120.325L174.28 109.065C182.63 104.245 192.93 104.245 201.28 109.065L226.05 123.365C234.4 128.185 239.55 137.095 239.55 146.745C239.55 151.575 238.26 156.215 235.93 160.255C233.63 164.235 230.32 167.625 226.22 170.035L221.59 172.715C225.55 170.395 225.54 164.625 221.55 162.335L154.78 123.785C153.45 123.015 153.45 121.095 154.78 120.325Z" fill="url(#fas-p3)"/>
+      <path d="M100.2 52.7849L136.21 31.9949C144.57 27.1749 154.86 27.1749 163.21 31.9949L226.05 68.2749C234.4 73.0949 239.55 82.0149 239.55 91.6649V114.175C239.55 115.715 237.88 116.675 236.55 115.905L127.04 52.6849C122.91 50.3349 118.31 49.1649 113.71 49.1749C109.05 49.1749 104.39 50.3749 100.2 52.7949V52.7849Z" fill="url(#fas-p4)"/>
+      <path d="M119.71 139.405L100.21 128.155C91.85 123.335 86.71 114.415 86.71 104.775V76.1748C86.71 66.5348 91.85 57.6148 100.21 52.7948C104.39 50.3748 109.05 49.1748 113.72 49.1748C118.31 49.1748 122.91 50.3448 127.04 52.6948L131.68 55.3648C127.69 53.0948 122.7 55.9848 122.71 60.5848V137.685C122.71 139.225 121.04 140.185 119.71 139.415V139.405Z" fill="url(#fas-p5)"/>
+    </g>
+  </defs>
+
+  <rect width="1080" height="1320" rx="18" fill="url(#bg)"/>
+
+  <rect x="24" y="20" width="1032" height="96" rx="16" fill="url(#header)" filter="url(#soft)"/>
+  <g transform="translate(42 39) scale(0.16)">
+    <use href="#foundryIcon"/>
+  </g>
+  <text x="102" y="58" font-size="30" font-weight="700" fill="#FFFFFF">Agentic Architecture — Hosted Agent Pipeline</text>
+  <text x="102" y="84" font-size="14" font-weight="500" fill="#D9EEFF">ACA orchestrates. Foundry hosts the specialist agents.</text>
+
+  <rect x="374" y="152" width="332" height="68" rx="34" fill="#2D76D2" filter="url(#softSm)"/>
+  <text x="540" y="193" text-anchor="middle" font-size="20" font-weight="700" fill="#FFFFFF">PA Request Intake</text>
+
+  <line x1="540" y1="220" x2="540" y2="258" stroke="#93A7C4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <rect x="286" y="268" width="508" height="108" rx="18" fill="url(#backend)" filter="url(#soft)"/>
+  <text x="540" y="308" text-anchor="middle" font-size="22" font-weight="700" fill="#FFFFFF">FastAPI Compatibility Layer + Orchestrator</text>
+  <text x="540" y="336" text-anchor="middle" font-size="13" fill="#D9EEFF">Validation, SSE progress, fan-out/fan-in coordination, and audit assembly</text>
+
+  <line x1="540" y1="376" x2="540" y2="414" stroke="#93A7C4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <rect x="34" y="424" width="1012" height="638" rx="22" fill="url(#foundryBand)" stroke="#DDD6FE" filter="url(#soft)"/>
+  <text x="70" y="468" font-size="19" font-weight="700" fill="#4338CA">Microsoft Foundry Agent Service</text>
+
+  <text x="70" y="510" font-size="15" font-weight="700" fill="#4B2B85">PHASE 1 — PARALLEL SPECIALIST REVIEW</text>
+
+  <rect x="70" y="530" width="442" height="154" rx="18" fill="url(#agent)" filter="url(#softSm)"/>
+  <text x="291" y="572" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">Compliance Agent</text>
+  <text x="291" y="604" text-anchor="middle" font-size="12" fill="#EEE7FF">Documentation completeness</text>
+  <text x="291" y="626" text-anchor="middle" font-size="12" fill="#EEE7FF">Demographics and submission readiness</text>
+  <rect x="190" y="644" width="202" height="28" rx="14" fill="#FFFFFF" fill-opacity="0.16"/>
+  <text x="291" y="662" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">No MCP tools</text>
+
+  <rect x="568" y="530" width="442" height="154" rx="18" fill="url(#agent)" filter="url(#softSm)"/>
+  <text x="789" y="572" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">Clinical Agent</text>
+  <text x="789" y="604" text-anchor="middle" font-size="12" fill="#EEE7FF">ICD-10 validation and clinical evidence extraction</text>
+  <text x="789" y="626" text-anchor="middle" font-size="12" fill="#EEE7FF">Returns structured findings for downstream coverage review</text>
+  <rect x="654" y="644" width="78" height="28" rx="8" fill="#0B7A18"/>
+  <text x="693" y="662" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">icd10</text>
+  <rect x="744" y="644" width="90" height="28" rx="8" fill="#0B7A18"/>
+  <text x="789" y="662" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">pubmed</text>
+  <rect x="846" y="644" width="90" height="28" rx="8" fill="#0B7A18"/>
+  <text x="891" y="662" text-anchor="middle" font-size="11" font-weight="700" fill="#FFFFFF">trials</text>
+
+  <line x1="540" y1="684" x2="540" y2="726" stroke="#93A7C4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <text x="70" y="748" font-size="15" font-weight="700" fill="#4B2B85">PHASE 2 — SEQUENTIAL COVERAGE ASSESSMENT</text>
+  <rect x="138" y="766" width="804" height="92" rx="18" fill="url(#agent)" filter="url(#softSm)"/>
+  <text x="540" y="804" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">Coverage Agent</text>
+  <text x="540" y="832" text-anchor="middle" font-size="12" fill="#EEE7FF">Provider verification, CMS policy lookup, and criteria mapping</text>
+  <rect x="736" y="818" width="64" height="24" rx="8" fill="#0B7A18"/>
+  <text x="768" y="834" text-anchor="middle" font-size="10" font-weight="700" fill="#FFFFFF">npi</text>
+  <rect x="812" y="818" width="64" height="24" rx="8" fill="#0B7A18"/>
+  <text x="844" y="834" text-anchor="middle" font-size="10" font-weight="700" fill="#FFFFFF">cms</text>
+
+  <line x1="540" y1="858" x2="540" y2="896" stroke="#93A7C4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <rect x="138" y="900" width="804" height="126" rx="18" fill="url(#agent)" filter="url(#softSm)"/>
+  <text x="172" y="940" font-size="16" font-weight="700" fill="#FFFFFF">PHASE 3 — HOSTED SYNTHESIS AGENT</text>
+  <text x="540" y="968" text-anchor="middle" font-size="12" fill="#EEE7FF">Foundry applies the decision rubric and returns a stable recommendation payload</text>
+  <rect x="170" y="986" width="216" height="32" rx="10" fill="#FFFFFF" fill-opacity="0.16"/>
+  <text x="278" y="1006" text-anchor="middle" font-size="12" font-weight="700" fill="#FFFFFF">Gate 1 — Provider valid?</text>
+  <rect x="432" y="986" width="216" height="32" rx="10" fill="#FFFFFF" fill-opacity="0.16"/>
+  <text x="540" y="1006" text-anchor="middle" font-size="12" font-weight="700" fill="#FFFFFF">Gate 2 — Codes valid?</text>
+  <rect x="694" y="986" width="216" height="32" rx="10" fill="#FFFFFF" fill-opacity="0.16"/>
+  <text x="802" y="1006" text-anchor="middle" font-size="12" font-weight="700" fill="#FFFFFF">Gate 3 — Medical necessity?</text>
+
+  <line x1="540" y1="1026" x2="540" y2="1066" stroke="#93A7C4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <rect x="210" y="1074" width="660" height="92" rx="18" fill="url(#success)" filter="url(#soft)"/>
+  <text x="540" y="1112" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">PHASE 4 — ACA BACKEND AUDIT + CONFIDENCE OUTPUTS</text>
+  <text x="540" y="1140" text-anchor="middle" font-size="12" fill="#D8F8DB">PDF justification, source attribution, and final response shaping remain in the backend</text>
+
+  <line x1="540" y1="1166" x2="540" y2="1206" stroke="#93A7C4" stroke-width="2.5" marker-end="url(#arrow)"/>
+
+  <rect x="262" y="1214" width="556" height="72" rx="36" fill="url(#decision)" filter="url(#soft)"/>
+  <text x="540" y="1258" text-anchor="middle" font-size="17" font-weight="700" fill="#FFFFFF">Human Decision Panel — Accept / Override → Final PDF Outputs</text>
+
+  <rect x="34" y="1060" width="156" height="214" rx="14" fill="#FFFFFF" stroke="#D9E2F0" filter="url(#softSm)"/>
+  <text x="52" y="1090" font-size="11" font-weight="700" fill="#27466D">Legend</text>
+  <rect x="52" y="1106" width="16" height="16" rx="4" fill="url(#agent)"/>
+  <text x="78" y="1119" font-size="10" fill="#425F82">Hosted agent</text>
+  <rect x="52" y="1132" width="16" height="16" rx="4" fill="#0B7A18"/>
+  <text x="78" y="1145" font-size="10" fill="#425F82">MCP tool</text>
+  <rect x="52" y="1158" width="16" height="16" rx="4" fill="url(#backend)"/>
+  <text x="78" y="1171" font-size="10" fill="#425F82">ACA backend</text>
+  <rect x="52" y="1184" width="16" height="16" rx="4" fill="url(#decision)"/>
+  <text x="78" y="1197" font-size="10" fill="#425F82">Human decision</text>
+  <g transform="translate(48 1212) scale(0.10)">
+    <use href="#foundryIcon"/>
+  </g>
+  <text x="78" y="1240" font-size="10" fill="#425F82">Foundry Agent Service</text>
+</svg>

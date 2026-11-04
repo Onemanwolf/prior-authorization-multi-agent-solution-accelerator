@@ -1,0 +1,145 @@
+services:
+  # ---------------------------------------------------------------------------
+  # FastAPI Orchestrator — fan-out/fan-in, SSE streaming, review dashboard
+  # ---------------------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      # All 4 agent containers run separately.
+      # Backend calls them over HTTP — URLs are set to Docker service names.
+      - HOSTED_AGENT_CLINICAL_URL=http://agent-clinical:8088
+      - HOSTED_AGENT_COVERAGE_URL=http://agent-coverage:8088
+      - HOSTED_AGENT_COMPLIANCE_URL=http://agent-compliance:8088
+      - HOSTED_AGENT_SYNTHESIS_URL=http://agent-synthesis:8088
+      # App settings
+      - FRONTEND_ORIGIN=http://localhost:3000
+      # OTel sensitive-data capture (PHI risk — local dev only).
+      # Uncomment in your shell or backend/.env, never commit as `true`.
+      # - ENABLE_OTEL_SENSITIVE_DATA=${ENABLE_OTEL_SENSITIVE_DATA:-false}
+    env_file:
+      - ./backend/.env
+    depends_on:
+      agent-clinical:
+        condition: service_healthy
+      agent-coverage:
+        condition: service_healthy
+      agent-compliance:
+        condition: service_healthy
+      agent-synthesis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
+  # ---------------------------------------------------------------------------
+  # Clinical Reviewer Agent — ICD-10, PubMed, Clinical Trials MCP
+  # ---------------------------------------------------------------------------
+  agent-clinical:
+    build:
+      context: ./agents/clinical
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8088"
+    environment:
+      - AZURE_AI_PROJECT_ENDPOINT=${AZURE_AI_PROJECT_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-5.4}
+      - MCP_ICD10_CODES=${MCP_ICD10_CODES:-https://hcls.mcp.claude.com/icd10_codes/mcp}
+      - MCP_PUBMED=${MCP_PUBMED:-https://pubmed.mcp.claude.com/mcp}
+      - MCP_CLINICAL_TRIALS=${MCP_CLINICAL_TRIALS:-https://hcls.mcp.claude.com/clinical_trials/mcp}
+      - APPLICATION_INSIGHTS_CONNECTION_STRING=${APPLICATION_INSIGHTS_CONNECTION_STRING:-}
+      # OTel sensitive-data capture (PHI risk — local dev only). Default: false.
+      - ENABLE_OTEL_SENSITIVE_DATA=${ENABLE_OTEL_SENSITIVE_DATA:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/readiness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Coverage Assessment Agent — NPI Registry, CMS Coverage MCP
+  # ---------------------------------------------------------------------------
+  agent-coverage:
+    build:
+      context: ./agents/coverage
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8088"
+    environment:
+      - AZURE_AI_PROJECT_ENDPOINT=${AZURE_AI_PROJECT_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-5.4}
+      - MCP_NPI_REGISTRY=${MCP_NPI_REGISTRY:-https://hcls.mcp.claude.com/npi_registry/mcp}
+      - MCP_CMS_COVERAGE=${MCP_CMS_COVERAGE:-https://hcls.mcp.claude.com/cms_coverage/mcp}
+      - APPLICATION_INSIGHTS_CONNECTION_STRING=${APPLICATION_INSIGHTS_CONNECTION_STRING:-}
+      # OTel sensitive-data capture (PHI risk — local dev only). Default: false.
+      - ENABLE_OTEL_SENSITIVE_DATA=${ENABLE_OTEL_SENSITIVE_DATA:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/readiness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Compliance Validation Agent — pure reasoning, no MCP tools
+  # ---------------------------------------------------------------------------
+  agent-compliance:
+    build:
+      context: ./agents/compliance
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8088"
+    environment:
+      - AZURE_AI_PROJECT_ENDPOINT=${AZURE_AI_PROJECT_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-5.4}
+      - APPLICATION_INSIGHTS_CONNECTION_STRING=${APPLICATION_INSIGHTS_CONNECTION_STRING:-}
+      # OTel sensitive-data capture (PHI risk — local dev only). Default: false.
+      - ENABLE_OTEL_SENSITIVE_DATA=${ENABLE_OTEL_SENSITIVE_DATA:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/readiness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Synthesis Decision Agent — pure reasoning, no MCP tools
+  # ---------------------------------------------------------------------------
+  agent-synthesis:
+    build:
+      context: ./agents/synthesis
+      dockerfile: Dockerfile
+    ports:
+      - "8004:8088"
+    environment:
+      - AZURE_AI_PROJECT_ENDPOINT=${AZURE_AI_PROJECT_ENDPOINT}
+      - AZURE_OPENAI_DEPLOYMENT_NAME=${AZURE_OPENAI_DEPLOYMENT_NAME:-gpt-5.4}
+      - APPLICATION_INSIGHTS_CONNECTION_STRING=${APPLICATION_INSIGHTS_CONNECTION_STRING:-}
+      # OTel sensitive-data capture (PHI risk — local dev only). Default: false.
+      - ENABLE_OTEL_SENSITIVE_DATA=${ENABLE_OTEL_SENSITIVE_DATA:-false}
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/readiness"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ---------------------------------------------------------------------------
+  # Next.js Frontend
+  # ---------------------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      backend:
+        condition: service_healthy

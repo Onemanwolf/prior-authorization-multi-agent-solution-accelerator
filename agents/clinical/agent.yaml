@@ -1,0 +1,46 @@
+# Foundry Hosted Agent descriptor — Clinical Reviewer Agent.
+#
+# Consumed by the `azd ai agent` extension at deploy time. Companion entry
+# in repo-root azure.yaml `services:` provides build context + remoteBuild.
+#
+# Schema reference (canonical):
+#   https://github.com/Azure-Samples/foundry-hosted-agentframework-demos/blob/main/agents/agent.yaml
+#
+# MCP tools (ICD-10, PubMed, ClinicalTrials.gov) are wired IN-CONTAINER via
+# `MCPStreamableHTTPTool` in main.py — Hosted Agents v2 does not accept the
+# legacy MCPTool entries that the Foundry Agent Service / Assistants API
+# used to expose. We pass each MCP server URL as an env var that main.py
+# reads and converts to an in-process MCP tool.
+kind: hosted
+name: clinical-reviewer-agent
+protocols:
+  - protocol: responses
+    version: "2.0.0"
+resources:
+  cpu: "1"
+  memory: 2Gi
+environment_variables:
+  # Model deployment (canonical + legacy fallback names).
+  - name: MODEL_DEPLOYMENT_NAME
+    value: ${AZURE_OPENAI_DEPLOYMENT_NAME}
+  - name: AZURE_OPENAI_DEPLOYMENT_NAME
+    value: ${AZURE_OPENAI_DEPLOYMENT_NAME}
+  - name: AZURE_AI_PROJECT_ENDPOINT
+    value: ${AI_FOUNDRY_PROJECT_ENDPOINT}
+  # App Insights connection string — the platform's auto-injection of the
+  # reserved APPLICATIONINSIGHTS_CONNECTION_STRING is malformed in the
+  # current preview, which crashes the agent host's tracing init at startup
+  # (`ValueError: Invalid connection string`). main.py reads this fallback
+  # name and overrides the broken value before ResponsesHostServer construction.
+  - name: OTEL_CONNECTION_STRING
+    value: ${APPLICATION_INSIGHTS_CONNECTION_STRING}
+  # MCP endpoints — main.py builds MCPStreamableHTTPTool entries from these.
+  # All MCPs are stateless and live on Anthropic's healthcare gateway
+  # (hcls.mcp.claude.com); PubMed is on its own subdomain.
+  - name: MCP_ICD10_CODES
+    value: https://hcls.mcp.claude.com/icd10_codes/mcp
+  - name: MCP_PUBMED
+    value: https://pubmed.mcp.claude.com/mcp
+  - name: MCP_CLINICAL_TRIALS
+    value: https://hcls.mcp.claude.com/clinical_trials/mcp
+tools: []

@@ -1,0 +1,1084 @@
+# Deployment Guide
+
+## Overview
+
+This guide walks you through deploying the **Prior Authorization Review — Multi-Agent Solution Accelerator** to Azure. The default deployment takes approximately 10 minutes and provisions the frontend, backend/orchestrator, and Microsoft Foundry project resources.
+
+> **Architecture note:** The project ships with four independent MAF Hosted Agent packages under `agents/` (clinical, coverage, compliance, synthesis). `docker compose up --build` starts all six services locally. For Azure, each agent is deployed as its own Foundry Hosted Agent container; the FastAPI orchestrator calls them over HTTP.
+
+🆘 **Need Help?** If you encounter any issues during deployment, check our [Troubleshooting Guide](./troubleshooting.md) for solutions to common problems.
+
+---
+
+## Step 1: Prerequisites & Setup
+
+### 1.1 Azure Account Requirements
+
+Ensure you have access to an [Azure subscription](https://azure.microsoft.com/free/) with the following permissions:
+
+| **Required Permission/Role** | **Scope** | **Purpose** |
+|------------------------------|-----------|-------------|
+| **Contributor** | Subscription level | Create and manage Azure resources |
+| **User Access Administrator** | Subscription level | Manage user access and role assignments |
+
+> **Why User Access Administrator?** `azd up` automatically assigns the following RBAC roles — this requires your account to have User Access Administrator (or Owner) on the subscription:
+>
+> | **Role Assigned** | **To** | **On** | **How** | **Purpose** |
+> |-------------------|--------|--------|---------|-------------|
+> | Cognitive Services OpenAI User | Backend Container App managed identity | Foundry account | `role-assignments.bicep` | Lets the FastAPI orchestrator call the Foundry Responses API |
+> | AcrPull | Backend + Frontend Container App managed identities | Container Registry | `role-assignments.bicep` | Lets Container Apps pull images from ACR via MI (admin user is disabled) |
+> | AcrPull | Foundry project managed identity | Container Registry | `role-assignments.bicep` | Lets Foundry pull the 4 agent images when provisioning Hosted Agents |
+> | Cognitive Services OpenAI Contributor | Foundry project managed identity | Foundry account | `role-assignments.bicep` | Lets hosted agent containers call gpt-5.4 via the Responses API |
+> | Foundry User | Foundry project managed identity | Foundry account | `role-assignments.bicep` | Lets hosted agent containers use Foundry Agent Service data actions |
+> | Foundry User | Deployer (you, running `azd up`) | Foundry project | postprovision hook (`az role assignment create`) | Lets the `azd ai agent` extension call `client.agents.create_version()` against the Foundry Agent Service API |
+> | Foundry Project Manager | Deployer (you, running `azd up`) | Foundry project | postprovision hook (`az role assignment create`) | Lets the `azd ai agent` extension write new hosted agent versions (`create_version()` needs more than `Foundry User`) |
+> | Foundry User | Per-agent instance identities (one Application identity per hosted agent, created by `azd ai agent`) | Foundry account | postdeploy hook (`scripts/grant_agent_rbac.py`) | Lets each hosted agent container call gpt-5.4 via the Responses API. ~60s RBAC propagation on first run is normal. |
+>
+> **Role naming:** `Foundry User` and `Foundry Project Manager` were previously
+> named `Azure AI User` and `Azure AI Project Manager`. Depending on how recently
+> your tenant picked up the rename, the portal may still show either name. The
+> Bicep module and the postprovision hook both reference these roles by **role
+> definition ID** (`53ca6127-db72-4b80-b1b0-d745d6d5456d` and
+> `eadc314b-1a2d-4efa-be10-5d325db5065e`), so deployment is unaffected either way.
+
+**🔍 How to Check Your Permissions:**
+
+1. Go to [Azure Portal](https://portal.azure.com/)
+2. Navigate to **Subscriptions** (search for "subscriptions" in the top search bar)
+3. Click on your target subscription
+4. In the left menu, click **Access control (IAM)**
+5. Scroll down to see the table with your assigned roles — you should see:
+   - **Contributor**
+   - **User Access Administrator**
+
+### 1.2 Check Service Availability & Quota
+
+⚠️ **CRITICAL:** Before proceeding, ensure your chosen region has all required services available:
+
+**Required Azure Services:**
+
+| **Service** | **Purpose** | **Pricing** |
+|-------------|-------------|-------------|
+| [Microsoft Foundry](https://learn.microsoft.com/en-us/azure/ai-foundry/) | Foundry Resource + Project (auto-provisioned) | [Pricing](https://azure.microsoft.com/en-us/pricing/details/ai-foundry/) |
+| [Azure Container Apps](https://learn.microsoft.com/en-us/azure/container-apps/) | Backend (2 CPU / 4Gi, min 1 replica) + frontend containers | [Pricing](https://azure.microsoft.com/en-us/pricing/details/container-apps/) |
+| [Azure Container Registry](https://learn.microsoft.com/en-us/azure/container-registry/) | Storing Docker images | [Pricing](https://azure.microsoft.com/en-us/pricing/details/container-registry/) |
+| [Azure Application Insights](https://learn.microsoft.com/en-us/azure/azure-monitor/app/app-insights-overview) | Observability and tracing (optional) | [Pricing](https://azure.microsoft.com/en-us/pricing/details/monitor/) |
+
+> **Note:** The Microsoft Foundry Resource, Project, and **gpt-5.4 model deployment** are all provisioned automatically by `azd up` — no manual portal steps required.
+
+**Region Availability — VALIDATE BEFORE DEPLOYING:** This solution depends on **two preview features** that are NOT available in every Azure region. Confirm both for your target region before running `azd up`:
+
+1. **Foundry Hosted Agents (preview)** — required to host the 4 agents:
+   📍 [Hosted Agents — Region availability](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents#region-availability)
+2. **Azure OpenAI gpt-5.4** — required for agent reasoning. Currently available in **East US 2** (`eastus2`) and **Sweden Central** (`swedencentral`):
+   📍 [Azure OpenAI model availability](https://learn.microsoft.com/en-us/azure/ai-services/openai/concepts/models)
+
+**Recommended:** **East US 2** or **Sweden Central** (both features confirmed). Sweden Central automatically uses **GlobalStandard**; East US 2 prompts you to choose between **GlobalStandard** and **DataZoneStandard**. The pre-flight checks will block deployment to any other region with a clear error message.
+
+🔍 **Model Details:** See [GPT-5.4 in Microsoft Foundry](https://techcommunity.microsoft.com/blog/azure-ai-foundry-blog/introducing-gpt-5-4-in-microsoft-foundry/4499785) for capabilities and pricing.
+
+### 1.3 GPT-5.4 Model Availability
+
+> **Note:** You do **not** need to create a Foundry project or deploy the gpt-5.4 model before running `azd up`. Everything — Foundry resource, project, model deployment (GlobalStandard or DataZoneStandard, 100K TPM), all 4 hosted agents, and the full application stack — is provisioned and registered automatically.
+
+---
+
+## Step 2: Choose Your Deployment Environment
+
+Select one of the following options to set up your deployment environment:
+
+### Environment Comparison
+
+| **Option** | **Best For** | **Prerequisites** | **Setup Time** |
+|------------|--------------|-------------------|----------------|
+| **GitHub Codespaces** | Quick deployment, no local setup required | GitHub account | ~3–5 minutes |
+| **VS Code Dev Containers** | Fast deployment with local tools | Docker Desktop, VS Code | ~5–10 minutes |
+| **VS Code Web** | Quick deployment, no local setup required | Azure account | ~2–4 minutes |
+| **Local Environment** | Full control, custom development | All tools individually | ~15–30 minutes |
+
+**💡 Recommendation:** For fastest deployment, start with **GitHub Codespaces** — no local installation required.
+
+---
+
+<details>
+<summary><b>Option A: GitHub Codespaces (Easiest)</b></summary>
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/microsoft/Prior-Authorization-Multi-Agent-Solution-Accelerator)
+
+1. Click the badge above (may take several minutes to load)
+2. Accept default values on the Codespaces creation page
+3. Wait for the environment to initialize — the setup script automatically installs Python and Node.js dependencies (~2–3 minutes). You'll see `Setup complete! 🎉` in the terminal when it's done.
+4. Proceed to [Step 4: Deploy the Solution](#step-4-deploy-the-solution) (skip Step 3 — credentials are configured after `azd up` provisions the Foundry resources)
+
+</details>
+
+<details>
+<summary><b>Option B: VS Code Dev Containers</b></summary>
+
+[![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/microsoft/Prior-Authorization-Multi-Agent-Solution-Accelerator)
+
+**Prerequisites:**
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) installed and running
+- [VS Code](https://code.visualstudio.com/) with [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers)
+
+**Steps:**
+1. Start Docker Desktop
+2. Click the badge above to open in Dev Containers
+3. Wait for the container to build and start (includes all deployment tools)
+4. Proceed to [Step 4: Deploy the Solution](#step-4-deploy-the-solution) (skip Step 3 — credentials are configured after `azd up` provisions the Foundry resources)
+
+</details>
+
+<details>
+<summary><b>Option C: Visual Studio Code Web</b></summary>
+
+[![Open in Visual Studio Code Web](https://img.shields.io/static/v1?style=for-the-badge&label=Visual%20Studio%20Code%20(Web)&message=Open&color=blue&logo=visualstudiocode&logoColor=white)](https://vscode.dev/azure/?vscode-azure-exp=foundry&agentPayload=eyJiYXNlVXJsIjogImh0dHBzOi8vcmF3LmdpdGh1YnVzZXJjb250ZW50LmNvbS9hbWl0bXVraC9wcmlvci1hdXRoLW1hZi9yZWZzL2hlYWRzL21haW4vaW5mcmEvdnNjb2RlX3dlYiIsICJpbmRleFVybCI6ICIvaW5kZXguanNvbiIsICJ2YXJpYWJsZXMiOiB7ImFnZW50SWQiOiAiIiwgImNvbm5lY3Rpb25TdHJpbmciOiAiIiwgInRocmVhZElkIjogIiIsICJ1c2VyTWVzc2FnZSI6ICIiLCAicGxheWdyb3VuZE5hbWUiOiAiIiwgImxvY2F0aW9uIjogIiIsICJzdWJzY3JpcHRpb25JZCI6ICIiLCAicmVzb3VyY2VJZCI6ICIiLCAicHJvamVjdFJlc291cmNlSWQiOiAiIiwgImVuZHBvaW50IjogIiJ9LCAiY29kZVJvdXRlIjogWyJhaS1wcm9qZWN0cy1zZGsiLCAicHl0aG9uIiwgImRlZmF1bHQtYXp1cmUtYXV0aCIsICJlbmRwb2ludCJdfQ==)
+
+1. Click the badge above (may take a few minutes to load)
+2. Sign in with your Azure account when prompted
+3. Select the subscription where you want to deploy the solution
+4. Wait for the environment to initialize (includes all deployment tools)
+5. When prompted in the VS Code Web terminal, choose one of the available options
+6. **Authenticate with Azure** (VS Code Web requires device code authentication):
+   ```shell
+   azd auth login --use-device-code
+   az login --use-device-code
+   ```
+   > **Note:** In VS Code Web environment, the regular `az login` command may fail. Use the `--use-device-code` flag to authenticate via device code flow.
+
+7. Proceed to [Step 4.2: Start Deployment](#42-start-deployment) (skip Steps 3 and 4.1 — auth is done above, credentials are configured after `azd up`)
+
+</details>
+
+<details>
+<summary><b>Option D: Local Environment</b></summary>
+
+**Required Tools:**
+
+| **Tool** | **Version** | **Installation** |
+|----------|-------------|------------------|
+| [Python](https://www.python.org/downloads/) | 3.11+ | Backend runtime (local dev only) |
+| [Node.js](https://nodejs.org/) | 18+ | Frontend build (local dev only) |
+| [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) | Latest | Azure resource management |
+| [Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd) | 1.18.0+ | Infrastructure deployment |
+| [Git](https://git-scm.com/) | Latest | Repository clone |
+
+**Setup Steps:**
+
+1. Install all required deployment tools listed above
+2. Clone the repository:
+
+   ```bash
+   git clone https://github.com/microsoft/Prior-Authorization-Multi-Agent-Solution-Accelerator.git
+   cd Prior-Authorization-Multi-Agent-Solution-Accelerator
+   ```
+
+3. Open the project folder in your IDE or terminal
+4. Proceed to [Step 3: Configure Deployment Settings](#step-3-configure-deployment-settings)
+
+**PowerShell Users:** If you encounter script execution issues, run:
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+```
+
+> **macOS / Linux note — Python interpreter on PATH:** The `azd up` postdeploy
+> hook runs `scripts/grant_agent_rbac.py` and `scripts/check_agents.py`. The
+> hook auto-detects `python3` (preferred) or `python`. macOS ships only
+> `python3` by default — the hook handles this automatically. If neither is
+> on PATH the hook prints a clear install hint and exits.
+>
+> **Windows note — PowerShell + Python:** The hook expects `pwsh` (PowerShell 7+)
+> or falls back to Windows PowerShell, and resolves Python via `python` then `py -3`
+> (the launcher installed by python.org). If `azd up` aborts before the
+> postdeploy banner, install [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell)
+> and ensure Python 3.11+ is on PATH (`python --version` should work in a
+> fresh terminal).
+
+</details>
+
+---
+
+## Step 3: Configure Deployment Settings
+
+Review the configuration options below. You can customize any settings that meet your needs, or leave them as defaults to proceed with a standard deployment.
+
+### 3.1 Set Environment Variables
+
+> **Note:** This step is only required for **local development** or **Docker Compose** deployments. If you are deploying with `azd up`, skip this step — after `azd up` completes, see [Step 4.3](#43-deployment-complete--no-manual-steps-required).
+
+The backend uses `backend/.env` and each MAF agent container reads env vars declared in its `agents/<name>/agent.yaml` (Foundry deploy) or the root `.env` / `docker-compose.yml` (local Docker Compose).
+
+**`backend/.env`** (orchestrator only):
+
+```env
+# Hosted agent endpoints
+# Docker Compose: point to the MAF agent services
+HOSTED_AGENT_CLINICAL_URL=http://agent-clinical:8088
+HOSTED_AGENT_COVERAGE_URL=http://agent-coverage:8088
+HOSTED_AGENT_COMPLIANCE_URL=http://agent-compliance:8088
+HOSTED_AGENT_SYNTHESIS_URL=http://agent-synthesis:8088
+HOSTED_AGENT_TIMEOUT_SECONDS=180
+
+# Azure Application Insights (optional — shared by all containers)
+APPLICATION_INSIGHTS_CONNECTION_STRING=InstrumentationKey=...;IngestionEndpoint=...
+```
+
+**Env vars required by each MAF agent container** (declared in each `agents/<name>/agent.yaml` `env_vars:` block for Foundry deploy — the `azd ai agent` extension propagates them at `create_version()` time — or add to root `.env` / `docker-compose.yml` for Docker Compose):
+
+```env
+# Microsoft Foundry project endpoint (required by all 4 agent containers)
+AZURE_AI_PROJECT_ENDPOINT=https://<resource-name>.services.ai.azure.com
+
+# Model deployment name
+AZURE_OPENAI_DEPLOYMENT_NAME=gpt-5.4
+```
+
+> **MCP tools:** The accelerator wires all five MCP servers **in-container** via `MCPStreamableHTTPTool` inside each agent's `main.py`. All five MCPs are stateless HTTPS endpoints, so no session-reconnect workarounds are required. MCP endpoints are passed as `MCP_*` env vars from `agents/<name>/agent.yaml` (Foundry) or `docker-compose.yml` (local). The same code paths run in both modes. The refreshed Foundry preview's platform-managed `MCPTool` model is currently rejected by the agent-server runtime, so a single in-container path is used uniformly. See [architecture.md](architecture.md#mcp-integration).
+
+> **Authentication note:** MAF agents use `DefaultAzureCredential` (managed identity on Azure, Azure CLI locally) — no API key required. For local Docker Compose, ensure your local Azure CLI session is active (`az login`) or set `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` if running without CLI auth.
+
+> **Where to find these values:**
+>
+> 1. Go to [ai.azure.com](https://ai.azure.com/) → select your project
+> 2. On the **Home** tab you will see:
+>    - **Project endpoint** (e.g., `https://<resource-name>.services.ai.azure.com/api/projects/<project-name>`) → `AZURE_AI_PROJECT_ENDPOINT`
+> 3. The **deployment name** of your gpt-5.4 model (e.g., `gpt-5.4`) → `AZURE_OPENAI_DEPLOYMENT_NAME`. Find it under the **Build** tab → **Deployments** in the left menu.
+>
+> ```
+> Project endpoint    = "https://<resource-name>.services.ai.azure.com/api/projects/<project>"  →  AZURE_AI_PROJECT_ENDPOINT
+> Deployment name     = "gpt-5.4"                                                                →  AZURE_OPENAI_DEPLOYMENT_NAME
+> ```
+
+If you are using hosted agents, add the hosted-agent URLs after those agent
+deployments are available.
+
+### 3.2 Advanced Configuration (Optional)
+
+<details>
+<summary><b>MCP Server Endpoints</b></summary>
+
+MCP tools are wired **in-container** for all five servers. Each agent's `main.py` instantiates `MCPStreamableHTTPTool` directly, reading the URL from an `MCP_*` env var declared in `agents/<name>/agent.yaml` (Foundry) or `docker-compose.yml` (local). The same code paths run in both modes.
+
+| **MCP Server** | **Endpoint** | **Provider** | **Wiring** | **Purpose** |
+|----------------|-------------|--------------|------------|-------------|
+| ICD-10 Codes | `https://hcls.mcp.claude.com/icd10_codes/mcp` | Anthropic | In-container `MCPStreamableHTTPTool` | Diagnosis code lookup |
+| PubMed | `https://pubmed.mcp.claude.com/mcp` | Anthropic | In-container `MCPStreamableHTTPTool` | PubMed literature search |
+| Clinical Trials | `https://hcls.mcp.claude.com/clinical_trials/mcp` | Anthropic | In-container `MCPStreamableHTTPTool` | Clinical trial search |
+| NPI Registry | `https://hcls.mcp.claude.com/npi_registry/mcp` | Anthropic | In-container `MCPStreamableHTTPTool` | Provider NPI validation |
+| CMS Coverage | `https://hcls.mcp.claude.com/cms_coverage/mcp` | Anthropic | In-container `MCPStreamableHTTPTool` | Medicare LCD/NCD policies |
+
+To add a custom MCP server, see [extending.md § Add a New MCP Server](extending.md#add-a-new-mcp-server).
+
+</details>
+
+<details>
+<summary><b>Choose Deployment Method</b></summary>
+
+| **Aspect** | **azd up (Default)** | **Docker Compose** | **Local Dev** |
+|------------|----------------------|--------------------|--------------------|
+| **Target** | Azure Container Apps | Local Docker | Local processes |
+| **Best For** | Cloud deployment | Quick demo | Development with hot reload |
+| **Setup Time** | ~10 minutes | ~5 minutes | ~10 minutes |
+| **Infrastructure** | Fully provisioned | Local only | Local only |
+
+> **Note:** Step 4 below covers the default `azd up` deployment. For Docker Compose or local development alternatives, see [Alternative Deployment Methods](#alternative-deployment-methods).
+
+</details>
+
+---
+
+## Step 4: Deploy the Solution
+
+💡 **Before You Start:** If you encounter any issues during deployment, check our [Troubleshooting Guide](./troubleshooting.md) for common solutions.
+
+⚠️ **Critical: Redeployment Warning** — If you have previously run `azd up` in this folder (i.e., a `.azure` folder exists), you must [create a fresh environment](#creating-a-new-environment) to avoid conflicts and deployment failures.
+
+### 4.1 Authenticate with Azure
+
+Both `azd` and `az` CLI must be authenticated. The pre-flight checks in the deployment hooks verify both.
+
+```bash
+azd auth login
+az login
+```
+
+**For Codespaces / VS Code Web** (device code flow required):
+```bash
+azd auth login --use-device-code
+az login --use-device-code
+```
+
+**For specific tenants:**
+```bash
+azd auth login --tenant-id <tenant-id>
+az login --tenant <tenant-id>
+```
+
+> **Conditional Access note:** If your organization enforces Conditional Access policies, `azd auth login` from Codespaces may fail with Error 53003. Use a non-corporate Azure account or deploy from your local machine instead.
+
+**Finding Tenant ID:**
+1. Open the [Azure Portal](https://portal.azure.com/)
+2. Navigate to **Microsoft Entra ID** from the left-hand menu
+3. Under the **Overview** section, locate the **Tenant ID** field. Copy the value displayed
+
+### 4.2 Start Deployment
+
+```bash
+azd up
+```
+
+> **💡 Automated Pre-Flight Checks:** Before provisioning any Azure resources, `azd up` automatically runs a 7-step verification that checks Azure CLI authentication, subscription permissions, required CLI extensions, project files, soft-deleted Key Vault conflicts, resource provider registration, and resource quotas. If any issues are found, you'll see clear guidance on how to fix them — saving you from a failed deployment after a long wait.
+
+**During deployment, you'll be prompted for:**
+1. **Environment name** (e.g., `prior-auth-dev`) — a label for your deployment, used in the resource group name
+2. **Azure subscription** selection
+3. **Azure region** — select **`eastus2`** or **`swedencentral`** (gpt-5.4 is currently only available in these two regions). Sweden Central auto-selects GlobalStandard; East US 2 prompts for GlobalStandard or DataZoneStandard
+
+**What gets deployed (fully automated):**
+- **Microsoft Foundry Resource + Project**
+- **gpt-5.4 model deployment** (GlobalStandard or DataZoneStandard, 100K TPM) — no manual portal step
+- **4 Foundry Hosted Agents** registered automatically (clinical, compliance, coverage, synthesis)
+- Azure Container Registry (used for remote image builds — no local Docker required)
+- Azure Container Apps Environment
+- Backend Container App (Python/FastAPI, port 8000, 2 CPU / 4Gi RAM, min 1 replica)
+- Frontend Container App (Next.js/nginx, port 80)
+- Log Analytics workspace + Application Insights (linked to Foundry project automatically)
+
+> **Note:** Container images are built remotely on Azure Container Registry, so no local Docker installation is required for deployment. This works on any machine architecture (x86, ARM64) and any OS.
+
+**Expected Duration:** ~10 minutes for initial provisioning + deployment. On the very first run, agent registration may take an extra 1–2 minutes while Azure RBAC propagates the newly assigned Foundry User role (you'll see "Waiting for RBAC propagation" messages — this is normal). Subsequent runs skip this wait.
+
+**⚠️ Deployment Issues:** If you encounter errors or timeouts, check the [Troubleshooting Guide](./troubleshooting.md) for detailed error solutions.
+
+### 4.3 Deployment Complete — No Manual Steps Required
+
+`azd up` handles everything end-to-end:
+
+| What | How | Status after `azd up` |
+|---|---|---|
+| Foundry Resource + Project | Bicep | ✅ Provisioned |
+| gpt-5.4 model (GlobalStandard or DataZoneStandard, 100K TPM) | Bicep | ✅ Deployed |
+| Container images (backend + 4 agents + frontend) | ACR remote build | ✅ Built & pushed |
+| Container Apps | Bicep | ✅ Running |
+| Foundry Hosted Agents registered | `azd ai agent` extension (auto-invoked by `azd deploy`) | ✅ Registered |
+| Per-agent RBAC (Foundry User on Foundry account) | `scripts/grant_agent_rbac.py` postdeploy hook | ✅ Granted |
+| App Insights linked to Foundry project | Bicep connection resource | ✅ Linked |
+| Pre-flight health check | `scripts/check_agents.py` postprovision hook | ✅ All checks passed |
+
+> **Authentication:** All resources use `DefaultAzureCredential` (managed identity on Azure) — no API keys, no manual credential configuration.
+
+Once `azd up` finishes, open the **Frontend URL** printed in the deployment output and you are ready to use the application.
+
+### 4.4 Get Application URL
+
+After successful deployment, the frontend and backend URLs are displayed in the deployment output under **Application URLs**. You can also retrieve them with:
+
+```bash
+azd env get-value frontendUrl
+azd env get-value backendUrl
+```
+
+Or find them in the [Azure Portal](https://portal.azure.com/) under your resource group → Frontend/Backend Container App → **Application Url**.
+
+> **Ready to use:** After `azd up` completes, open the frontend URL — no post-deployment configuration is required.
+
+---
+
+## Step 5: Post-Deployment Configuration
+
+### 5.1 Verify Application Health
+
+`azd up` automatically runs a pre-flight health check (`scripts/check_agents.py`)
+after agent registration. It verifies:
+
+| **Check** | **What it validates** |
+|-----------|----------------------|
+| Agent Registration | All 4 agents registered at correct version with App Insights env vars |
+| App Insights Connection | Connection string available for observability |
+| MCP Tool Connections | All 5 MCP servers + App Insights connection in Foundry project |
+| Backend Health | `/health` endpoint returns 200 |
+| Frontend Available | Homepage returns 200 |
+
+You can also run it manually at any time:
+
+```bash
+python scripts/check_agents.py              # full check
+python scripts/check_agents.py --version 6  # verify specific agent version
+python scripts/check_agents.py --poll       # poll until all healthy
+```
+
+If all checks pass, the output shows: **"All checks passed. Ready to submit PA requests."**
+
+### 5.2 Test the Application
+
+**Quick Test Steps:**
+
+1. **Access the application** using the URL from Step 4.4
+2. Click **"Load Sample Case"** to populate the form with demo data
+3. Click **"Submit for Review"**
+4. Monitor the progress tracker — you should see all 5 phases complete
+5. Review the agent results in the dashboard tabs (Compliance, Clinical, Coverage)
+6. Use the **Decision Panel** to Accept or Override the recommendation
+7. Download the audit PDF and notification letter
+
+> 📖 **Sample Case:** The built-in sample case demonstrates a prior authorization request for lumbar spinal fusion (CPT 22612) with degenerative disc disease (ICD-10 M51.16) — a common PA scenario requiring medical necessity evaluation.
+
+### 5.3 Verify Observability (Optional)
+
+If you configured Azure Application Insights:
+
+1. Open [Azure Portal](https://portal.azure.com/) → your Application Insights resource
+2. Navigate to **Application Map** — you should see two labeled nodes:
+
+   ```
+   prior-auth-backend
+     └──► azure.ai.agentserver
+   ```
+
+   The backend node uses the `OTEL_SERVICE_NAME=prior-auth-backend` env var.
+   The agent node is hard-coded by the refreshed Hosted Agents host
+   (`azure-ai-agentserver-core`) — all four agent containers share this
+   service name but are distinguished by the `gen_ai.agent.name` span
+   attribute (sourced from the platform-injected `FOUNDRY_AGENT_NAME`).
+   To see per-agent breakdowns, group dependencies by `gen_ai.agent.name`
+   in the Investigate performance or KQL views.
+
+3. Select any node and choose **Investigate performance** or **Investigate
+   failures** to drill into per-component latency and error rates.
+
+4. Use **Transaction Search** or **End-to-end transaction details** to follow
+   a single PA review across all five processes — backend orchestration spans
+   stitch to the MAF `invoke_agent` / `chat` / `execute_tool` spans inside
+   each agent container via W3C trace context headers.
+
+5. Check **Live Metrics** during an active review to see real-time request
+   rates, dependency durations, and exceptions across all containers.
+
+### 5.4 Register Agents in Foundry Control Plane (Optional)
+
+You can optionally register the multi-agent system in **Microsoft Foundry Control Plane** for centralized observability, fleet monitoring, and organizational inventory. Registration lets you view agent traces, runs, and error rates in the Foundry portal — it does **not** by itself change the app's runtime behavior or traffic flow. The frontend continues to call the backend Container App directly regardless of whether agents are registered.
+
+#### What You Get
+
+| Feature | Without Registration | With Registration |
+|---------|---------------------|-------------------|
+| Agent traces in App Insights | ✅ | ✅ |
+| Container logs in Log Analytics | ✅ | ✅ |
+| Agent listed in Foundry portal | ❌ | ✅ |
+| Block/Unblock agent from Foundry | ❌ | ✅ * |
+| Fleet monitoring dashboard (runs, error rates, cost) | ❌ | ✅ |
+| Centralized trace viewer in Foundry | ❌ | ✅ |
+
+> **\* Important — Block/Unblock limitation:** Block/Unblock only affects traffic routed through the Foundry AI Gateway proxy URL. In the default deployment, the frontend calls the backend Container App directly — **Block/Unblock has no operational effect on this app** unless you adopt the proxy routing pattern described in the [Production Enhancement](#production-enhancement-enable-foundry-proxy-for-operational-control) section below.
+
+#### Architecture
+
+The Prior Auth system uses a fan-out/fan-in orchestration pattern. The **Orchestrator** is the production entry point, and each sub-agent also has a dedicated endpoint for evaluation, red-teaming, hosted-agent deployment, and optional Foundry registration.
+
+```
+Default traffic flow (registration alone does NOT change this):
+
+  Frontend → Backend Container App /api/review/stream → Orchestrator
+                                                          ├── Clinical Agent  (local or hosted)
+                                                          ├── Compliance Agent (local or hosted)
+                                                          ├── Coverage Agent   (local or hosted)
+                                                          └── Synthesis Agent  (local or hosted)
+
+Foundry registration (observability side-channel only):
+
+  Foundry Portal ← traces/metrics ← Backend (via App Insights)
+
+Per-agent endpoints (eval / hosted deployment contract / Foundry registration):
+  POST /api/agents/clinical
+  POST /api/agents/compliance
+  POST /api/agents/coverage
+  POST /api/agents/synthesis
+```
+
+**Registration options:**
+
+| Strategy | When to use |
+|----------|-------------|
+| **Orchestrator only** | Minimal setup. Registers a single entry in Foundry for fleet-level trace visibility. |
+| **Orchestrator + individual agents** | Full per-agent trace visibility in Foundry. Useful for per-agent evaluation, red-teaming, and organizational inventory. |
+
+#### Prerequisites
+
+- Deployment completed (Steps 4.1–4.4)
+- Access to the [Foundry (new) portal](https://ai.azure.com/) — look for the `(new)` toggle in the portal banner
+
+#### Step 1: Enable AI Gateway
+
+The AI Gateway is a free, Foundry-managed feature (backed by Azure API Management) that enables agent registration, traffic proxying, and governance.
+
+1. Go to [ai.azure.com](https://ai.azure.com/) and ensure the **Foundry (new)** toggle is on
+2. On the toolbar, select **Operate**
+3. On the left pane, select **Admin**
+4. Open the **AI Gateway** tab
+5. Check if your Foundry resource has an associated AI gateway
+6. If not listed, click **Add AI Gateway** and follow the prompts
+
+> **Note:** An AI gateway is free to set up and unlocks governance features like security, diagnostic data, and rate limits.
+
+📖 **Detailed Instructions:** See [Create an AI gateway](https://learn.microsoft.com/en-us/azure/foundry/configuration/enable-ai-api-management-gateway-portal#create-an-ai-gateway).
+
+#### Step 2: Connect Application Insights to Foundry Project
+
+> **✅ This is done automatically by `azd up`** — the Bicep template creates the AppInsights connection resource on the Foundry project at deploy time. You can verify it in the Foundry portal under **Operate → Admin → your project → Connected resources** — you should already see an `app-insights` entry.
+
+If the connection is missing (e.g. after a failed provision), add it manually:
+1. In the Foundry portal, select **Operate** → **Admin**
+2. Under **All projects**, search for your project
+3. Select the project → **Connected resources** tab
+4. Click **Add connection** → **Application Insights** → select the `appi-*` resource in your resource group
+
+#### Step 3: Register the Orchestrator Agent
+
+1. In the Foundry portal, select **Operate** → **Overview**
+2. Click **Register agent**
+3. Fill in the agent details:
+
+| Field | Value |
+|-------|-------|
+| **Agent URL** | `https://<your-backend-fqdn>/api/review/stream` (the backend Container App URL) |
+| **Protocol** | HTTP |
+| **OpenTelemetry Agent ID** | `prior-auth-orchestrator` |
+| **Admin portal URL** | *(optional)* Your Azure Portal resource group URL |
+| **Project** | Select the auto-provisioned Microsoft Foundry project |
+| **Agent name** | `Prior Auth Orchestrator` |
+| **Description** | Multi-agent prior authorization review system. Orchestrates Clinical Reviewer, Compliance Validation, Coverage Assessment, and Synthesis agents in a fan-out/fan-in pattern to produce structured PA recommendations for human reviewers. |
+
+4. Save the registration
+
+> **Finding your backend URL:** Run `azd env get-value backendUrl`, or check the Azure Portal under your resource group → Backend Container App → **Application Url**.
+
+#### Step 3b: Register Individual Agents (Optional)
+
+If you need per-agent evaluation, red-teaming, or independent governance controls, register each sub-agent as a separate custom agent:
+
+| Agent Name | Agent URL | OpenTelemetry Agent ID |
+|------------|-----------|------------------------|
+| Prior Auth Clinical Reviewer | `https://<backend-fqdn>/api/agents/clinical` | `prior-auth-clinical` |
+| Prior Auth Compliance Validator | `https://<backend-fqdn>/api/agents/compliance` | `prior-auth-compliance` |
+| Prior Auth Coverage Assessor | `https://<backend-fqdn>/api/agents/coverage` | `prior-auth-coverage` |
+| Prior Auth Synthesis Decision | `https://<backend-fqdn>/api/agents/synthesis` | `prior-auth-synthesis` |
+
+Repeat the Step 3 registration flow for each agent above. All agents share the same backend Container App — no additional infrastructure is needed.
+
+> **Tip:** See [API Reference — Per-Agent Endpoints](./api-reference.md#per-agent-endpoints) for request/response schemas and curl examples.
+
+#### Step 4: Verify (No Client Changes Needed)
+
+After registration, Foundry generates a **proxy URL** for each registered agent (e.g., `https://apim-<resource>.azure-api.net/prior-auth-orchestrator/`). However, **no changes are needed** for this application:
+
+- The **frontend** continues to call the backend Container App directly
+- The **orchestrator** continues to use its configured runtime mode (local or hosted)
+- The Foundry proxy URL is **not used** by any component in this app unless you explicitly reroute traffic through it
+
+The proxy URL is only relevant if external third-party consumers need governed access to your agents through the Foundry AI Gateway.
+
+> **Note:** If you want Block/Unblock to have operational effect on this app, see the [Production Enhancement](#production-enhancement-enable-foundry-proxy-for-operational-control) section below.
+
+#### Step 5: Verify Registration
+
+1. In the Foundry portal, select **Operate** → **Assets**
+2. Use the **Source** filter → select **Custom** to see your registered agent
+3. Verify the status shows **Running**
+4. Submit a test PA request and check the **Traces** tab to confirm traces are flowing
+
+#### Lifecycle Management
+
+Once registered, you can manage the agent from the Foundry portal:
+
+| Action | How | Effect |
+|--------|-----|--------|
+| **Block** | Assets → Select agent → Update status → Block | Blocks requests routed through the Foundry proxy URL only. **Has no effect on this app** in the default deployment because the frontend calls the backend directly. |
+| **Unblock** | Assets → Select agent → Update status → Unblock | Re-enables requests through the Foundry proxy URL. Same caveat: no effect unless traffic is routed through the proxy. |
+| **View traces** | Assets → Select agent → Traces tab | Shows each HTTP call to the agent with trace details including sub-agent spans. |
+
+> **Important:** Block/Unblock controls the Foundry AI Gateway proxy — not your backend Container App. Since this app calls the backend directly, blocking an agent in Foundry does not prevent the app from processing PA requests. To stop the underlying infrastructure entirely, scale down the Container App: `az containerapp update --name <app> --resource-group <rg> --min-replicas 0 --max-replicas 0`
+
+#### Production Enhancement: Enable Foundry Proxy for Operational Control
+
+In the default deployment, Block/Unblock has no effect because the frontend calls the backend directly. To make Foundry's Block/Unblock a real operational control for the entire pipeline, route frontend traffic through the Foundry AI Gateway proxy:
+
+**Step 1: Update frontend to use the Foundry proxy URL**
+
+```bash
+# Copy the proxy URL from Foundry portal → Assets → Select agent → Agent URL → Copy
+azd env set BACKEND_URL https://apim-<foundry-resource>.azure-api.net/prior-auth-orchestrator/
+azd up
+```
+
+**Step 2: Lock down direct backend access (recommended)**
+
+Set the backend Container App ingress to internal-only so the **only** public path is through the Foundry proxy. In `infra/modules/container-app.bicep`, update the backend's ingress:
+
+```bicep
+ingress: {
+  external: false   // was: true — now only reachable via Foundry proxy
+  targetPort: targetPort
+  transport: 'auto'
+  allowInsecure: false
+}
+```
+
+Redeploy with `azd up`. Now blocking the agent in Foundry effectively stops all incoming PA requests.
+
+**Per-agent Block/Unblock**
+
+To block/unblock individual agents independently, you would need to split each agent into its own container and have the orchestrator call agents via their Foundry proxy URLs instead of in-process. This is a larger architectural change (microservices pattern) and is beyond the scope of this solution accelerator.
+
+---
+
+#### Observability Progression
+
+The level of trace detail visible in Foundry depends on upstream framework releases:
+
+| What | When | Trace Detail |
+|------|------|-------------|
+| **HTTP-level traces** | Available now | Request/response to `/review` endpoint (duration, status code) |
+| **Agent-level traces** | Available now (rc3+) | `invoke_agent` spans with agent name, duration, response capture, exception tracking |
+| **Tool-level traces** | Available now with MAF native agents | Individual MCP tool call spans (e.g., `npi_lookup`, `validate_code`) as child spans via `gen_ai.*` semantic conventions |
+
+The Microsoft Agent Framework's `ResponsesHostServer` emits W3C-compliant trace context and standard `gen_ai.*` OTel spans natively — this resolves the black-box tracing limitation of the previous Claude SDK subprocess approach. Agent dependency versions are already pinned in each `agents/*/requirements.txt` (`agent-framework-core>=1.13.0,<2`, `agent-framework-foundry>=1.10.4,<2`, `agent-framework-foundry-hosting>=1.0.0b260730,<2`, `azure-ai-agentserver-core>=2.0.0,<3`). To pick up newer trace capabilities, update those pins and rebuild.
+
+📖 **Learn More:**
+- [Register a custom agent in Foundry Control Plane](https://learn.microsoft.com/en-us/azure/foundry/control-plane/register-custom-agent)
+- [Manage agents in Foundry Control Plane](https://learn.microsoft.com/en-us/azure/foundry/control-plane/how-to-manage-agents)
+- [Monitor agent health across your fleet](https://learn.microsoft.com/en-us/azure/foundry/control-plane/monitoring-across-fleet)
+
+---
+
+## Step 6: Clean Up (Optional)
+
+### Remove All Resources
+
+```bash
+azd down
+```
+
+This deletes all Azure resources provisioned by `azd up`, including the resource group, Container Registry, Container Apps, Log Analytics, and Application Insights.
+
+### Manual Cleanup (if needed)
+
+If deployment fails or you need to clean up manually:
+
+1. Go to [Azure Portal](https://portal.azure.com/)
+2. Navigate to **Resource groups**
+3. Select your resource group (e.g., `prior-auth-rg`)
+4. Click **Delete resource group**
+5. Type the resource group name to confirm
+
+---
+
+## Managing Multiple Environments
+
+<details>
+<summary><b>Recover from Failed Deployment</b></summary>
+
+**If your deployment failed or encountered errors:**
+
+1. **Try the other supported region:** Create a new environment and select **East US 2** or **Sweden Central** during deployment
+2. **Clean up and retry:** Use `azd down` to remove failed resources, then `azd up` to redeploy
+3. **Check troubleshooting:** Review [Troubleshooting Guide](./troubleshooting.md) for specific error solutions
+4. **Fresh start:** Create a completely new environment with a different name
+
+**Example Recovery Workflow:**
+```bash
+# Remove failed deployment (optional)
+azd down
+
+# Create new environment
+azd env new priorauthretry
+
+# Deploy with different settings/region
+azd up
+```
+
+</details>
+
+<details>
+<summary><b>Creating a New Environment</b></summary>
+
+**Create Environment Explicitly:**
+```bash
+# Create a new named environment
+azd env new <new-environment-name>
+
+# Select the new environment
+azd env select <new-environment-name>
+
+# Deploy to the new environment
+azd up
+```
+
+**Example:**
+```bash
+# Create a new environment for production
+azd env new priorauthprod
+
+# Switch to the new environment
+azd env select priorauthprod
+
+# Deploy with fresh settings
+azd up
+```
+
+</details>
+
+<details>
+<summary><b>Switch Between Environments</b></summary>
+
+**List Available Environments:**
+```bash
+azd env list
+```
+
+**Switch to Different Environment:**
+```bash
+azd env select <environment-name>
+```
+
+**View Current Environment:**
+```bash
+azd env get-values
+```
+
+</details>
+
+### Best Practices for Multiple Environments
+
+- **Use descriptive names:** `priorauthdev`, `priorauthprod`, `priorauthtest`
+- **Different regions:** Deploy to East US 2 or Sweden Central for testing quota availability
+- **Separate configurations:** Each environment can have different parameter settings
+- **Clean up unused environments:** Use `azd down` to remove environments you no longer need
+
+---
+
+## Alternative Deployment Methods
+
+<details>
+<summary><b>Docker Compose (Local Quick Start)</b></summary>
+
+`docker compose up --build` starts **6 containers** — the FastAPI orchestrator,
+4 independent MAF agent containers, and the Next.js frontend.
+
+**Build and start containers:**
+
+```bash
+docker compose up --build
+```
+
+**Verify all services are healthy:**
+
+| **Service** | **URL** | **Expected Response** |
+|-------------|---------|----------------------|
+| Frontend | http://localhost:3000 | Application UI loads |
+| Backend (orchestrator) | http://localhost:8000/health | `{"status": "healthy"}` |
+| Clinical Agent | http://localhost:8001/readiness | `{"status":"healthy"}` |
+| Coverage Agent | http://localhost:8002/readiness | `{"status":"healthy"}` |
+| Compliance Agent | http://localhost:8003/readiness | `{"status":"healthy"}` |
+| Synthesis Agent | http://localhost:8004/readiness | `{"status":"healthy"}` |
+
+**Container startup order:**
+
+The four agent containers start first. The backend waits until all four pass
+their health checks before it starts accepting requests. The frontend waits
+for the backend. Total cold-start time is approximately 30–60 seconds.
+
+**Credentials required:**
+
+| **Container** | **Required env var** | **Source** |
+|---------------|----------------------|------------|
+| All 4 agents | `AZURE_AI_PROJECT_ENDPOINT` | Foundry Home tab |
+| All 4 agents | `AZURE_OPENAI_DEPLOYMENT_NAME` | Foundry Deployments |
+| Backend | `HOSTED_AGENT_*_URL` | Auto-set to agent container names in `docker-compose.yml` |
+
+> ⏱️ **Expected Duration:** ~2 minutes for initial build, ~30 seconds for subsequent starts.
+
+**Stop containers:**
+```bash
+# Stop and remove containers
+docker compose down
+
+# Remove built images (optional)
+docker compose down --rmi all
+```
+
+</details>
+
+<details>
+<summary><b>Local Development (Without Docker)</b></summary>
+
+**Backend setup:**
+
+```bash
+cd backend
+
+# Create and activate virtual environment
+python -m venv .venv
+
+# Windows:
+.venv\Scripts\activate
+# macOS/Linux:
+source .venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+```
+
+**Frontend setup:**
+
+```bash
+cd frontend
+npm install
+
+# Configure environment (optional — defaults work for local dev)
+cp .env.example .env.local
+```
+
+**Start both servers (in separate terminals):**
+
+**Backend** (runs on port 8000):
+```bash
+cd backend
+uvicorn app.main:app --reload
+```
+
+**Frontend** (runs on port 3000):
+```bash
+cd frontend
+cp .env.example .env.local   # sets NEXT_PUBLIC_API_BASE=http://localhost:8000/api
+npm run dev
+```
+
+**Verify deployment:**
+
+Open `http://localhost:3000` in your browser.
+
+> **Note:** The frontend calls the backend directly (not through a Next.js rewrite proxy) because multi-agent reviews take 3–5 minutes — longer than the dev server proxy's default timeout.
+
+</details>
+
+<details>
+<summary><b>Azure Container Apps via CLI (Manual)</b></summary>
+
+**Authenticate with Azure:**
+
+```bash
+az login
+```
+
+For specific tenants:
+```bash
+az login --tenant-id <tenant-id>
+```
+
+**Create a Resource Group:**
+
+```bash
+az group create \
+  --name prior-auth-rg \
+  --location eastus
+```
+
+**Create Azure Container Registry:**
+
+```bash
+az acr create \
+  --name priorauthacr \
+  --resource-group prior-auth-rg \
+  --sku Basic \
+  --admin-enabled true
+```
+
+**Build and push container images:**
+
+```bash
+# Build backend image
+az acr build \
+  --registry priorauthacr \
+  --image prior-auth-backend:latest \
+  --file backend/Dockerfile ./backend
+
+# Build frontend image
+az acr build \
+  --registry priorauthacr \
+  --image prior-auth-frontend:latest \
+  --file frontend/Dockerfile ./frontend
+```
+
+**Create Container Apps Environment:**
+
+```bash
+az containerapp env create \
+  --name prior-auth-env \
+  --resource-group prior-auth-rg \
+  --location eastus
+```
+
+**Deploy the backend (internal ingress):**
+
+```bash
+az containerapp create \
+  --name prior-auth-backend \
+  --resource-group prior-auth-rg \
+  --environment prior-auth-env \
+  --image priorauthacr.azurecr.io/prior-auth-backend:latest \
+  --registry-server priorauthacr.azurecr.io \
+  --target-port 8000 \
+  --ingress internal \
+  --min-replicas 1 \
+  --max-replicas 1 \
+  --cpu 1 --memory 2Gi \
+  --env-vars \
+    AZURE_AI_PROJECT_ENDPOINT=https://<account>.services.ai.azure.com/api/projects/<project> \
+    AZURE_OPENAI_DEPLOYMENT_NAME=gpt-5.4 \
+    FRONTEND_ORIGIN=https://prior-auth-frontend.<env-unique-id>.<region>.azurecontainerapps.io
+```
+
+> **Note:** The backend is pinned to `--max-replicas 1` because the orchestrator keeps review state and the notification-letter counter in process memory. Externalize this state (Cosmos DB / Redis) before scaling out — see [production-migration.md](production-migration.md).
+
+**Get backend internal FQDN:**
+
+```bash
+az containerapp show \
+  --name prior-auth-backend \
+  --resource-group prior-auth-rg \
+  --query "properties.configuration.ingress.fqdn" -o tsv
+```
+
+> ⚠️ **Important:** Note the backend FQDN — you'll need to update `frontend/nginx.conf` to proxy `/api` requests to this URL instead of `http://backend:8000` before building the frontend image. Update the `proxy_pass` line:
+>
+> ```nginx
+> proxy_pass http://<backend-internal-fqdn>;
+> ```
+
+**Deploy the frontend (external ingress):**
+
+```bash
+az containerapp create \
+  --name prior-auth-frontend \
+  --resource-group prior-auth-rg \
+  --environment prior-auth-env \
+  --image priorauthacr.azurecr.io/prior-auth-frontend:latest \
+  --registry-server priorauthacr.azurecr.io \
+  --target-port 80 \
+  --ingress external \
+  --min-replicas 1 \
+  --max-replicas 3 \
+  --cpu 0.5 --memory 1Gi
+```
+
+**Get the application URL:**
+
+```bash
+az containerapp show \
+  --name prior-auth-frontend \
+  --resource-group prior-auth-rg \
+  --query "properties.configuration.ingress.fqdn" -o tsv
+```
+
+> ⏱️ **Expected Duration:** ~15–20 minutes total for infrastructure + deployment.
+
+**Clean up manually deployed resources:**
+
+```bash
+az group delete --name prior-auth-rg --yes --no-wait
+```
+
+</details>
+
+---
+
+## Environment Variables Reference
+
+All environment variables used by the application, organized by purpose.
+
+### Microsoft Foundry (MAF Agent Routing)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `AZURE_AI_PROJECT_ENDPOINT` | **Yes** | — | Microsoft Foundry project endpoint. Format: `https://<account>.services.ai.azure.com/api/projects/<project>`. Found on the Foundry portal **Home** tab. Set in `backend/.env` for local dev; injected automatically by Bicep on Azure. |
+
+### Model Configuration
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | No | `gpt-5.4` | The Azure OpenAI **deployment name** as shown in the Foundry portal under **Build** → **Deployments**. Declared per-agent in each `agents/<name>/agent.yaml` `env_vars:` block. |
+
+> **Authentication:** The backend and all hosted agents authenticate via `DefaultAzureCredential` (managed identity on Azure, Azure CLI locally). No API key is required.
+
+### Application
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `FRONTEND_ORIGIN` | No | `http://localhost:5173` | CORS origin for the frontend. Set to the frontend's deployed URL in production. |
+| `APPLICATION_INSIGHTS_CONNECTION_STRING` | No | — | Azure Application Insights connection string for observability. Auto-provisioned by Bicep when deploying with `azd up`. |
+
+### MCP Servers (Optional)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+
+> **Note:** MCP server URLs (NPI, ICD-10, CMS, PubMed, ClinicalTrials) are declared as `MCP_*` env vars in each `agents/<name>/agent.yaml` and the agent containers wire them in-container via `MCPStreamableHTTPTool`. The `azd ai agent` extension propagates these env vars at `create_version()` time during `azd up`.
+
+### How Variables Flow in Azure Deployment
+
+```
+backend/.env (local)                  azd environment (.azure/<env>/.env)
+─────────────────────────             ─────────────────────────────────────
+AZURE_AI_PROJECT_ENDPOINT        →    AZURE_AI_PROJECT_ENDPOINT
+AZURE_OPENAI_DEPLOYMENT_NAME     →    (declared per-agent in agents/<name>/agent.yaml env_vars)
+FRONTEND_ORIGIN                  →    FRONTEND_ORIGIN
+                                        ↓ (main.parameters.json mapping)
+                                  infra/main.bicep parameters
+                                        ↓ (Container App env vars)
+                              ┌──────────────────────────────────────────┐
+                              │ AZURE_AI_PROJECT_ENDPOINT                │
+                              │ HOSTED_AGENT_CLINICAL_NAME               │
+                              │ HOSTED_AGENT_COMPLIANCE_NAME             │
+                              │ HOSTED_AGENT_COVERAGE_NAME               │
+                              │ HOSTED_AGENT_SYNTHESIS_NAME              │
+                              │ APPLICATION_INSIGHTS_CONNECTION_STRING   │
+                              │ FRONTEND_ORIGIN                          │
+                              └──────────────────────────────────────────┘
+```
+
+---
+
+## Troubleshooting
+
+### Common Deployment Issues
+
+| **Issue** | **Cause** | **Solution** |
+|-----------|-----------|--------------|
+| Backend health check fails | Port mismatch or dependency error | Check logs: `docker compose logs backend` |
+| MCP server timeouts | Network/firewall blocking MCP endpoints | Verify outbound HTTPS access to `hcls.mcp.claude.com` and `pubmed.mcp.claude.com` |
+| Frontend shows CORS error | `FRONTEND_ORIGIN` mismatch | Set `FRONTEND_ORIGIN` to match the frontend's URL |
+| Container build fails | Docker not running | Start Docker Desktop and retry |
+| Azure quota exceeded | Insufficient gpt-5.4 model quota | Check quota in Microsoft Foundry under **Build → Deployments** (see Step 1.3) |
+| Agent reviews take >5 min | gpt-5.4 model capacity limits | Retry during off-peak hours or check Foundry service status |
+
+> 📖 **Detailed Troubleshooting:** See [Troubleshooting Guide](./troubleshooting.md) for comprehensive solutions.
+
+---
+
+## Next Steps
+
+Now that your deployment is complete and tested, explore these resources to enhance your experience:
+
+📚 **Learn More:**
+- [Architecture](./architecture.md) — Multi-agent architecture, MCP integration, decision rubric, confidence scoring
+- [API Reference](./api-reference.md) — REST API endpoints, request/response schemas, SSE events
+- [Extending the Application](./extending.md) — Add new agents, MCP servers, customize rubric and notification letters
+- [Technical Notes](./technical-notes.md) — Windows SDK patches, MCP headers, structured output, observability
+- [Production Migration](./production-migration.md) — PostgreSQL, Azure Blob Storage, migration steps
+
+## Need Help?
+
+- 🐛 **Issues:** Check [Troubleshooting Guide](./troubleshooting.md)
+- 💬 **Support:** Review [Support Guidelines](../SUPPORT.md) or open an issue on [GitHub](https://github.com/microsoft/Prior-Authorization-Multi-Agent-Solution-Accelerator/issues)
+- 🔧 **Contributing:** See [Contributing Guide](../CONTRIBUTING.md)
+- 📖 **Documentation:** See [Architecture](./architecture.md) for system design details
