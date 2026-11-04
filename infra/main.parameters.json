@@ -16,6 +16,9 @@
     },
     "imagesBuilt": {
       "value": "${IMAGES_BUILT}"
+    },
+    "imageTag": {
+      "value": "${APPLICATION_IMAGE_TAG}"
     }
   }
 }

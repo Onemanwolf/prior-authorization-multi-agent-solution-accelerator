@@ -48,7 +48,15 @@ Decision policy and evaluation methodology adapted from the [Anthropic prior-aut
 
 See the [Deployment Guide](./docs/DeploymentGuide.md) for full prerequisites and step-by-step instructions.
 
-**Prerequisites:** Azure subscription · [azd ≥ 1.18.0](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) · Docker · [GPT-5.4 access request](https://aka.ms/OAI/gpt53codexaccess)
+**Prerequisites:** Azure subscription · [azd ≥ 1.37.0](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) · Foundry agents extension ≥ 1.0.0-beta.23 · [PowerShell 7 on Windows](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) · [GPT-5.4 access request](https://aka.ms/OAI/gpt53codexaccess). Local Docker is needed for Docker Compose or local image builds, not the configured remote ACR builds.
+
+**Windows:** Open PowerShell 7 and run this in the same terminal before the deployment commands below:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force
+```
+
+Agent definitions and runtime variables are declared directly in root `azure.yaml` under each service, using `container.resources` and `env`. The older files under `agents/*/agent.yaml` are historical references and are not read by this template.
 
 ```bash
 # Deploy to Azure (recommended — Foundry Hosted Agent mode)
@@ -237,7 +245,7 @@ Follow the quick deploy steps on the deployment guide to deploy this solution to
 > [!IMPORTANT]
 > **Model access required:** GPT-5.4 requires a separate access request before it can be deployed. [Apply for access here](https://aka.ms/OAI/gpt53codexaccess). Deployment will fail if access has not been granted to your subscription.
 >
-> This solution accelerator requires **Azure Developer CLI (azd) version 1.18.0 or higher** for Azure deployment. Please ensure you have the latest version installed before proceeding. [Download azd here](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
+> This solution accelerator requires **Azure Developer CLI (azd) version 1.37.0 or higher**, **azure.ai.agents 1.0.0-beta.23 or higher**, and **PowerShell 7 on Windows** for Azure deployment. [Download azd here](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd).
 
 [Click here to launch the deployment guide](./docs/DeploymentGuide.md)
 

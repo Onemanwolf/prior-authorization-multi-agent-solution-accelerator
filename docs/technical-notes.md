@@ -405,7 +405,7 @@ and the Foundry portal shows empty Trace ID / Duration / Tokens.
 **Docker Compose mode** — `HOSTED_AGENT_*_URL` vars (defaults already in `docker-compose.yml`):
 
 | Agent | Variable | Default |
-|-------|----------|---------| 
+|-------|----------|---------|
 | Clinical | `HOSTED_AGENT_CLINICAL_URL` | `http://agent-clinical:8088` |
 | Compliance | `HOSTED_AGENT_COMPLIANCE_URL` | `http://agent-compliance:8088` |
 | Coverage | `HOSTED_AGENT_COVERAGE_URL` | `http://agent-coverage:8088` |
@@ -457,9 +457,9 @@ The first six roles are assigned by `infra/modules/role-assignments.bicep` durin
 
 Agent registration is performed by `azd deploy` itself via the
 `azd ai agent` extension. Each agent has an entry under the `services:`
-block in `azure.yaml` with `host: azure.ai.agent` and a matching
-`agents/<name>/agent.yaml` that declares the agent's canonical metadata
-(name, protocols, cpu/memory, environment variables). On `azd deploy` the
+block in `azure.yaml` with `host: azure.ai.agent` and inline canonical metadata
+(`name`, `protocols`, `container.resources`, and service-level `env`).
+Historical `agents/<name>/agent.yaml` files are not consumed. On `azd deploy` the
 extension:
 
 1. ACR-builds the agent image from `agents/<name>/Dockerfile` (no local
@@ -509,10 +509,10 @@ Two constraints are imposed by the hosting runtime rather than by this repo:
 - **Responses protocol 2.0.0 is mandatory.** `agent-framework-foundry-hosting`
   `1.0.0b260730`+ rejects protocol 1.0.0 at request time with
   `RuntimeError: The hosted environment is running on protocol 1.0.0, but the
-  agent requires protocol 2.0.0`. Every `agents/*/agent.yaml` declares
+  agent requires protocol 2.0.0`. Every agent service in root `azure.yaml` declares
   `version: "2.0.0"`.
 
-Resource specs are declared per agent in `agents/<name>/agent.yaml`:
+Resource specs are declared per agent in root `azure.yaml` under `container.resources`:
 
 | Agent | CPU | Memory |
 |-------|-----|--------|

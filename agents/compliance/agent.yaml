@@ -26,9 +26,10 @@ name: compliance-agent
 protocols:
   - protocol: responses
     version: "2.0.0"
-resources:
-  cpu: "0.5"
-  memory: 1Gi
+container:
+  resources:
+    cpu: "0.5"
+    memory: 1Gi
 environment_variables:
   # Canonical model deployment name read by main.py (preferred form).
   - name: MODEL_DEPLOYMENT_NAME

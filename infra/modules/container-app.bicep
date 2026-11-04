@@ -5,6 +5,7 @@ param tags object = {}
 param containerAppsEnvironmentId string
 param containerRegistryLoginServer string
 param imageName string
+param imageTag string = 'latest'
 param targetPort int
 param env array = []
 param secrets array = []
@@ -63,7 +64,7 @@ resource containerApp 'Microsoft.App/containerApps@2024-03-01' = {
       containers: [
         {
           name: imageName
-          image: useAcrImage ? '${containerRegistryLoginServer}/${imageName}:latest' : 'mcr.microsoft.com/k8se/quickstart:latest'
+          image: useAcrImage ? '${containerRegistryLoginServer}/${imageName}:${imageTag}' : 'mcr.microsoft.com/k8se/quickstart:latest'
           resources: {
             cpu: json(cpu)
             memory: memory

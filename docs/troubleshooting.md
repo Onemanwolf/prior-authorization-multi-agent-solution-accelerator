@@ -1,5 +1,45 @@
 # Troubleshooting
 
+## MCP session fails with `cannot import name 'Client' from 'mcp'`
+
+This is a Python client dependency mismatch inside the agent image, not evidence that the remote MCP server is missing. Agent Framework 1.24+ imports the high-level `mcp.Client` API from MCP 2.x; installing `mcp<2` leaves that symbol unavailable. Its current HTTP transport also uses `httpx2`, not the older `httpx` client.
+
+Clinical and coverage now require `agent-framework-core>=1.24.0,<2`, `mcp>=2.2.0,<3`, and `httpx2>=2.10.0,<3`. Their Docker builds check these imports before completing. Run the network-free dependency smoke checks from the repository root:
+
+```bash
+uv run --no-project --python 3.12 --with-requirements agents/coverage/requirements.txt python scripts/test_mcp_dependencies.py -v
+uv run --no-project --python 3.12 --with-requirements agents/clinical/requirements.txt python scripts/test_mcp_dependencies.py -v
+```
+
+Rebuild and deploy the affected agent images; restarting an old image does not install the new dependencies:
+
+```bash
+azd deploy coverage-assessment-agent
+azd deploy clinical-reviewer-agent
+```
+
+These local checks verify imports and transport construction without calling Azure, a model, or an external MCP endpoint. Server authentication, discovery, and tool calls require separate live verification after deployment.
+
+## Windows deployment hook is blocked by execution policy
+
+`PSSecurityException`, `UnauthorizedAccess`, or "running scripts is disabled" means PowerShell rejected the generated hook script before it ran. This is separate from the missing `pwsh` warning and from Azure authorization.
+
+Install PowerShell 7, open a new PowerShell 7 terminal in the repository, and run:
+
+```powershell
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force
+Get-ExecutionPolicy
+azd up
+```
+
+Run all three commands in the same terminal. This changes only the process policy, not user or machine settings. If the effective policy is still restricted, run `Get-ExecutionPolicy -List`; organization-managed `MachinePolicy` and `UserPolicy` take precedence and must be addressed by your administrator. Changing the policy inside `preprovision` cannot work because the hook is blocked before its first statement.
+
+## Agent service configuration is rejected
+
+The current template keeps hosted-agent settings directly in each root `azure.yaml` service. Historical `agents/*/agent.yaml` files are not loaded. For `unsupported nested config block`, remove the nested `config` block. For `cannot unmarshal object ... resources ... []project.Resource`, move CPU and memory to `container.resources`. Runtime variables belong in service-level `env`, not `environment_variables` or `env_vars`.
+
+Use the [offline deployment checks](DeploymentGuide.md#current-hosted-agent-configuration) before retrying. Do not regenerate the project with `azd ai agent init` as a workaround for these configuration errors.
+
 ## `POST /api/review` returns `422 Unprocessable Entity`
 
 The API rejected the request before the multi-agent pipeline ran (issue #28).
@@ -114,7 +154,7 @@ requires protocol 2.0.0. Please upgrade your agent protocol to 2.0.0 in
 **Cause:** `agent-framework-foundry-hosting` `1.0.0b260730` and later require
 responses protocol 2.0.0, but the agent manifest still declares 1.0.0.
 
-**Fix:** set the protocol version in every `agents/*/agent.yaml`, then redeploy:
+**Fix:** set the protocol version in every agent service in root `azure.yaml`, then redeploy:
 
 ```yaml
 protocols:

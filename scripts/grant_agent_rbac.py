@@ -30,8 +30,7 @@ import subprocess
 import sys
 from typing import Iterable
 
-# Agent service names as they appear in azure.yaml `services:` block AND
-# as the `name:` field in each agents/*/agent.yaml. Keep in sync with both.
+# Agent service keys and name fields in root azure.yaml must match.
 HOSTED_AGENTS: tuple[str, ...] = (
     "clinical-reviewer-agent",
     "coverage-assessment-agent",
@@ -45,8 +44,8 @@ HOSTED_AGENTS: tuple[str, ...] = (
 # "Azure AI User" to "Foundry User" and `az --role <name>` fails on updated tenants.
 ROLE_ID = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
 
-# Latest stable api-version exposing instance_identity.principal_id.
-AGENT_API_VERSION = "2025-11-15-preview"
+# Current agent management API exposing instance_identity.principal_id.
+AGENT_API_VERSION = "v1"
 
 
 def _run(cmd: list[str], *, capture: bool = True) -> str:
@@ -83,7 +82,7 @@ def _agent_latest_version(project_endpoint: str, agent_name: str, token: str) ->
     import urllib.request
     import urllib.error
 
-    url = f"{project_endpoint}/agents/{agent_name}/versions?api-version={AGENT_API_VERSION}"
+    url = f"{project_endpoint.rstrip('/')}/agents/{agent_name}?api-version={AGENT_API_VERSION}"
     req = urllib.request.Request(url, headers={"Authorization": f"Bearer {token}"})
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
@@ -91,10 +90,7 @@ def _agent_latest_version(project_endpoint: str, agent_name: str, token: str) ->
     except urllib.error.HTTPError as exc:
         print(f"  WARN: cannot list {agent_name} versions ({exc.code} {exc.reason})", file=sys.stderr)
         return None
-    versions = payload.get("data") or []
-    if not versions:
-        return None
-    return max(versions, key=lambda v: int(v.get("version", "0")))
+    return (payload.get("versions") or {}).get("latest") or None
 
 
 def _grant_role(principal_id: str, scope: str, role: str) -> bool:
@@ -152,15 +148,18 @@ def main(agents: Iterable[str] = HOSTED_AGENTS) -> int:
     token = _get_token()
 
     granted = 0
+    failed = 0
     for agent in agents:
         version = _agent_latest_version(project_endpoint, agent, token)
         if version is None:
-            print(f"  - {agent:30s}  (no versions found, skipped)")
+            print(f"  ERROR: {agent}: no deployed version found", file=sys.stderr)
+            failed += 1
             continue
         instance = version.get("instance_identity") or {}
         principal_id = instance.get("principal_id")
         if not principal_id:
-            print(f"  - {agent:30s}  v{version.get('version')}  (no instance identity, skipped)")
+            print(f"  ERROR: {agent}: deployed version has no instance identity", file=sys.stderr)
+            failed += 1
             continue
         is_new = _grant_role(principal_id, account_scope, ROLE_ID)
         status = "granted" if is_new else "ok"
@@ -169,7 +168,7 @@ def main(agents: Iterable[str] = HOSTED_AGENTS) -> int:
 
     if granted:
         print(f"\n  {granted} new role assignment(s) created. RBAC may take ~30-60s to propagate.")
-    return 0
+    return 1 if failed else 0
 
 
 if __name__ == "__main__":

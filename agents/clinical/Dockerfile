@@ -15,7 +15,8 @@ WORKDIR /app
 
 # Install Python dependencies
 COPY requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt && \
+    python -c "from mcp import Client; from agent_framework import MCPStreamableHTTPTool; import httpx2"
 
 # Copy agent code and skills
 COPY main.py ./

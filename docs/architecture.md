@@ -1,5 +1,8 @@
 # Architecture
 
+For token usage, request/response correlation, errors, latency, and MCP diagnostics,
+see the [Application Insights query guide](app-insights.md).
+
 ## Multi-Agent Architecture
 
 The application uses a **pure HTTP dispatch** architecture. The FastAPI backend has no local AI runtime — all specialist reasoning runs in four independent Foundry Hosted Agent containers.
@@ -8,38 +11,70 @@ The application uses a **pure HTTP dispatch** architecture. The FastAPI backend 
 - **Each of the 4 specialist agents is a standalone Foundry Hosted Agent** (independent container, independently scalable)
 - **The backend owns**: SSE progress streaming, review persistence, decision handling, audit PDF generation, and HTTP dispatch to the agent containers
 
+```mermaid
+flowchart TB
+    reviewer["Clinical reviewer<br/>Browser"]
+
+    subgraph azure["Azure subscription / resource group"]
+        subgraph aca["Azure Container Apps environment"]
+            frontend["Frontend<br/>Next.js UI / Nginx"]
+            backend["Backend<br/>FastAPI + orchestrator<br/>Validation, review store, decisions, audit/PDF"]
+        end
+
+        subgraph foundry["Microsoft Foundry account"]
+            subgraph project["Foundry project"]
+                subgraph hosted["Foundry Hosted Agents - managed compute, not the ACA environment"]
+                    compliance["Compliance agent<br/>Documentation checklist"]
+                    clinical["Clinical reviewer agent<br/>Clinical evidence and diagnosis validation"]
+                    coverage["Coverage assessment agent<br/>Provider verification and policy criteria"]
+                    synthesis["Synthesis agent<br/>Recommendation, rationale and confidence"]
+                end
+            end
+            model["Azure OpenAI model deployment<br/>gpt-5.4"]
+        end
+
+        registry["Azure Container Registry<br/>Frontend, backend and agent images"]
+        insights["Application Insights<br/>OpenTelemetry traces and logs"]
+        logs["Log Analytics workspace"]
+    end
+
+    subgraph external["External MCP servers - HTTPS"]
+        icd["ICD-10 Codes"]
+        pubmed["PubMed"]
+        trials["ClinicalTrials.gov"]
+        npi["NPI Registry"]
+        cms["CMS Coverage"]
+    end
+
+    reviewer <-->|"HTTPS: form, progress, decision and PDF"| frontend
+    frontend <-->|"Backend API + SSE progress"| backend
+    backend <-->|"Foundry Responses API / managed identity"| compliance
+    backend <-->|"Foundry Responses API / managed identity"| clinical
+    backend <-->|"Foundry Responses API / managed identity"| coverage
+    backend <-->|"Foundry Responses API / managed identity"| synthesis
+
+    compliance -->|"Model inference"| model
+    clinical -->|"Model inference"| model
+    coverage -->|"Model inference"| model
+    synthesis -->|"Model inference"| model
+
+    clinical <-->|"MCP client inside agent"| icd
+    clinical <-->|"MCP client inside agent"| pubmed
+    clinical <-->|"MCP client inside agent"| trials
+    coverage <-->|"MCP client inside agent"| npi
+    coverage <-->|"MCP client inside agent"| cms
+
+    registry -.->|"Image pull"| frontend
+    registry -.->|"Image pull"| backend
+    registry -.->|"Agent image pull"| hosted
+    backend -.->|"Telemetry"| insights
+    hosted -.->|"Telemetry"| insights
+    insights -->|"Workspace-based storage"| logs
 ```
-┌────────────────────────────────────────────────────────────────────┐
-│ Next.js Frontend (ACA)                                            │
-│ UploadForm → POST /api/review/stream → ProgressTracker            │
-│ ReviewDashboard → DecisionPanel → PDF downloads                   │
-└──────────────────────────────┬─────────────────────────────────────┘
-                               │ REST + SSE
-┌──────────────────────────────▼─────────────────────────────────────┐
-│ FastAPI Backend + Orchestrator (ACA)                              │
-│ - Pre-flight validation                                           │
-│ - Phase orchestration and retries                                 │
-│ - SSE progress events                                             │
-│ - Review store + decision handling                                │
-│ - Audit/PDF generation                                            │
-└───────────────┬───────────────────────────────┬────────────────────┘
-                │                               │
-  POST */responses               │ OpenTelemetry
-  (Foundry Responses API)        │
-┌───────────────▼───────────────────────────────────────────────┐
-│ Microsoft Foundry Agent Service                               │
-│ - Compliance Agent                                            │
-│ - Clinical Agent                                              │
-│ - Coverage Agent                                              │
-│ - Synthesis Agent                                             │
-│ - Native evaluation / lifecycle / control-plane visibility    │
-└───────────────┬───────────────────────────────────────────────┘
-                │ MCP tools / model runtime
-┌───────────────▼───────────────────────────────────────────────┐
-│ MCP servers + Azure OpenAI gpt-5.4 endpoint                  │
-│ NPI Registry • ICD-10 • CMS Coverage • Clinical Trials • PubMed │
-└───────────────────────────────────────────────────────────────┘
-```
+
+The backend runs compliance and clinical reviews in parallel, then coverage using the clinical findings, then synthesis using all review outputs. It returns progress through SSE and generates the audit/PDF artifacts. Agents do not call each other directly; the backend coordinates the workflow. The review store is in memory, not a separately provisioned database.
+
+Solid arrows show runtime requests and responses. Dotted arrows show image distribution or telemetry. Bicep provisions the Azure resources, while `azd deploy` builds and registers the four hosted agents using the service definitions in root `azure.yaml`.
 
 ## Project Structure
 

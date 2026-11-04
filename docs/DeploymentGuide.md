@@ -157,10 +157,12 @@ Select one of the following options to set up your deployment environment:
 
 | **Tool** | **Version** | **Installation** |
 |----------|-------------|------------------|
-| [Python](https://www.python.org/downloads/) | 3.11+ | Backend runtime (local dev only) |
+| [Python](https://www.python.org/downloads/) | 3.11+ | Deployment health/RBAC scripts and local backend runtime |
 | [Node.js](https://nodejs.org/) | 18+ | Frontend build (local dev only) |
 | [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) | Latest | Azure resource management |
-| [Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd) | 1.18.0+ | Infrastructure deployment |
+| [Azure Developer CLI (azd)](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/install-azd) | 1.37.0+ | Infrastructure deployment |
+| Foundry agents extension (`azure.ai.agents`) | 1.0.0-beta.23+ | Hosted agent deployment |
+| [PowerShell](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) | 7+ on Windows | Windows deployment hooks |
 | [Git](https://git-scm.com/) | Latest | Repository clone |
 
 **Setup Steps:**
@@ -176,10 +178,13 @@ Select one of the following options to set up your deployment environment:
 3. Open the project folder in your IDE or terminal
 4. Proceed to [Step 3: Configure Deployment Settings](#step-3-configure-deployment-settings)
 
-**PowerShell Users:** If you encounter script execution issues, run:
+**Windows prerequisite:** Install [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell), open a new PowerShell 7 terminal, and allow local hook scripts for that terminal session before deployment:
 ```powershell
-Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
+Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned -Force
+Get-ExecutionPolicy
 ```
+
+The effective policy should be `RemoteSigned`. This setting applies only to the current process and its children; it does not change user or machine policy and requires no administrator privileges. Run deployment commands in this same terminal. If `MachinePolicy` or `UserPolicy` overrides it, check `Get-ExecutionPolicy -List` and contact your administrator rather than disabling organizational policy. An execution-policy check inside a hook cannot fix this error because PowerShell blocks the script before its first statement runs.
 
 > **macOS / Linux note — Python interpreter on PATH:** The `azd up` postdeploy
 > hook runs `scripts/grant_agent_rbac.py` and `scripts/check_agents.py`. The
@@ -187,12 +192,25 @@ Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass
 > `python3` by default — the hook handles this automatically. If neither is
 > on PATH the hook prints a clear install hint and exits.
 >
-> **Windows note — PowerShell + Python:** The hook expects `pwsh` (PowerShell 7+)
-> or falls back to Windows PowerShell, and resolves Python via `python` then `py -3`
-> (the launcher installed by python.org). If `azd up` aborts before the
-> postdeploy banner, install [PowerShell 7](https://learn.microsoft.com/powershell/scripting/install/installing-powershell)
-> and ensure Python 3.11+ is on PATH (`python --version` should work in a
-> fresh terminal).
+> **Windows note - PowerShell + Python:** Use `pwsh` (PowerShell 7+) and ensure Python 3.11+ is on PATH. The hooks resolve Python via `python`, then `py -3`. Although azd can fall back to Windows PowerShell 5.1, that fallback is not the supported Windows deployment prerequisite. Installing PowerShell 7 and allowing local scripts are separate prerequisites: installation alone does not override execution policy.
+
+### Current Hosted-Agent Configuration
+
+The root `azure.yaml` is the authoritative configuration. Each agent service declares `kind`, `name`, `protocols`, `container.resources`, and runtime `env` values directly. Do not edit the historical `agents/*/agent.yaml` files, add a nested `config` block, or put CPU/memory in top-level `resources` (that property is a list of external resources).
+
+This template retains its Bicep-managed Foundry account and project. The current platform manages hosted-agent infrastructure; retired account/project capability-host resources are no longer provisioned. Do not run `azd ai agent init` over this project to repair a field-level migration, since initialization can change the template structure.
+
+The postprovision hook saves `APPLICATION_IMAGE_TAG` after both application updates succeed. Bicep reuses that tag on subsequent provisions rather than assuming a `latest` image exists. For environments deployed by an older template with `IMAGES_BUILT=true` but no saved tag, set `APPLICATION_IMAGE_TAG` to the tag currently deployed on both application containers before reprovisioning.
+
+Run offline regression checks from the repository root before deployment:
+
+```bash
+uv run --no-project --with pyyaml python -m unittest discover -s scripts -p test_deployment.py -v
+```
+
+These checks do not authenticate, provision, build images, or invoke models. PowerShell/POSIX syntax checks run when the corresponding shell is installed. Regional model access, quota, Azure RBAC, ACR builds, and hosted-agent activation still require a real deployment to verify.
+
+References: [author hosted-agent configuration](https://learn.microsoft.com/azure/foundry/agents/how-to/author-azure-yaml), [hosted-agent migration](https://learn.microsoft.com/azure/foundry/agents/how-to/migrate-hosted-agent-preview), [azd hooks](https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-extensibility), and [PowerShell execution policy](https://learn.microsoft.com/powershell/module/microsoft.powershell.core/about/about_execution_policies).
 
 </details>
 
@@ -206,7 +224,7 @@ Review the configuration options below. You can customize any settings that meet
 
 > **Note:** This step is only required for **local development** or **Docker Compose** deployments. If you are deploying with `azd up`, skip this step — after `azd up` completes, see [Step 4.3](#43-deployment-complete--no-manual-steps-required).
 
-The backend uses `backend/.env` and each MAF agent container reads env vars declared in its `agents/<name>/agent.yaml` (Foundry deploy) or the root `.env` / `docker-compose.yml` (local Docker Compose).
+The backend uses `backend/.env` and each MAF agent container reads env vars declared in its root `azure.yaml` service-level `env` mapping (Foundry deploy) or the root `.env` / `docker-compose.yml` (local Docker Compose).
 
 **`backend/.env`** (orchestrator only):
 
@@ -223,7 +241,7 @@ HOSTED_AGENT_TIMEOUT_SECONDS=180
 APPLICATION_INSIGHTS_CONNECTION_STRING=InstrumentationKey=...;IngestionEndpoint=...
 ```
 
-**Env vars required by each MAF agent container** (declared in each `agents/<name>/agent.yaml` `env_vars:` block for Foundry deploy — the `azd ai agent` extension propagates them at `create_version()` time — or add to root `.env` / `docker-compose.yml` for Docker Compose):
+**Env vars required by each MAF agent container** (declared in each root `azure.yaml` service-level `env` mapping for Foundry deploy, or the root `.env` / `docker-compose.yml` for Docker Compose):
 
 ```env
 # Microsoft Foundry project endpoint (required by all 4 agent containers)
@@ -257,7 +275,7 @@ deployments are available.
 <details>
 <summary><b>MCP Server Endpoints</b></summary>
 
-MCP tools are wired **in-container** for all five servers. Each agent's `main.py` instantiates `MCPStreamableHTTPTool` directly, reading the URL from an `MCP_*` env var declared in `agents/<name>/agent.yaml` (Foundry) or `docker-compose.yml` (local). The same code paths run in both modes.
+MCP tools are wired **in-container** for all five servers. Each agent's `main.py` instantiates `MCPStreamableHTTPTool` directly, reading the URL from an `MCP_*` env var declared in its root `azure.yaml` service-level `env` mapping (Foundry) or `docker-compose.yml` (local). The same code paths run in both modes.
 
 | **MCP Server** | **Endpoint** | **Provider** | **Wiring** | **Purpose** |
 |----------------|-------------|--------------|------------|-------------|
@@ -1006,7 +1024,7 @@ All environment variables used by the application, organized by purpose.
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `AZURE_OPENAI_DEPLOYMENT_NAME` | No | `gpt-5.4` | The Azure OpenAI **deployment name** as shown in the Foundry portal under **Build** → **Deployments**. Declared per-agent in each `agents/<name>/agent.yaml` `env_vars:` block. |
+| `AZURE_OPENAI_DEPLOYMENT_NAME` | No | `gpt-5.4` | The Azure OpenAI **deployment name** as shown in the Foundry portal under **Build** → **Deployments**. Declared per-agent in root `azure.yaml` under service-level `env`. |
 
 > **Authentication:** The backend and all hosted agents authenticate via `DefaultAzureCredential` (managed identity on Azure, Azure CLI locally). No API key is required.
 
@@ -1022,7 +1040,7 @@ All environment variables used by the application, organized by purpose.
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 
-> **Note:** MCP server URLs (NPI, ICD-10, CMS, PubMed, ClinicalTrials) are declared as `MCP_*` env vars in each `agents/<name>/agent.yaml` and the agent containers wire them in-container via `MCPStreamableHTTPTool`. The `azd ai agent` extension propagates these env vars at `create_version()` time during `azd up`.
+> **Note:** MCP server URLs (NPI, ICD-10, CMS, PubMed, ClinicalTrials) are declared as `MCP_*` values in each root `azure.yaml` service-level `env` mapping and wired in-container via `MCPStreamableHTTPTool`.
 
 ### How Variables Flow in Azure Deployment
 
@@ -1030,7 +1048,7 @@ All environment variables used by the application, organized by purpose.
 backend/.env (local)                  azd environment (.azure/<env>/.env)
 ─────────────────────────             ─────────────────────────────────────
 AZURE_AI_PROJECT_ENDPOINT        →    AZURE_AI_PROJECT_ENDPOINT
-AZURE_OPENAI_DEPLOYMENT_NAME     →    (declared per-agent in agents/<name>/agent.yaml env_vars)
+AZURE_OPENAI_DEPLOYMENT_NAME     →    (declared per-agent in azure.yaml services.<name>.env)
 FRONTEND_ORIGIN                  →    FRONTEND_ORIGIN
                                         ↓ (main.parameters.json mapping)
                                   infra/main.bicep parameters

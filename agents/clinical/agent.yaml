@@ -16,9 +16,10 @@ name: clinical-reviewer-agent
 protocols:
   - protocol: responses
     version: "2.0.0"
-resources:
-  cpu: "1"
-  memory: 2Gi
+container:
+  resources:
+    cpu: "1"
+    memory: 2Gi
 environment_variables:
   # Model deployment (canonical + legacy fallback names).
   - name: MODEL_DEPLOYMENT_NAME

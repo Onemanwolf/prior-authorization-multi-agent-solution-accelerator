@@ -15,9 +15,9 @@ param location string
 @description('Tags for all resources')
 param tags object = {}
 
-@description('Application Insights instrumentation key — used to link this Foundry project to App Insights so the Foundry portal Traces view works')
+@description('Full Application Insights connection string used by the Foundry project tracing connection')
 @secure()
-param appInsightsInstrumentationKey string
+param appInsightsConnectionString string
 
 @description('Application Insights resource ID — the target resource for the AppInsights connection')
 param appInsightsResourceId string
@@ -81,9 +81,12 @@ resource appInsightsConnection 'Microsoft.CognitiveServices/accounts/projects/co
   properties: {
     category: 'AppInsights'
     target: appInsightsResourceId
+    metadata: {
+      ResourceId: appInsightsResourceId
+    }
     authType: 'ApiKey'
     credentials: {
-      key: appInsightsInstrumentationKey
+      key: appInsightsConnectionString
     }
   }
 }
@@ -107,36 +110,7 @@ resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-
     }
     versionUpgradeOption: 'OnceCurrentVersionExpired'
   }
-  dependsOn: [capabilityHost]
-}
-// ── Capability Host — required for Foundry Hosted Agents ─────────────────────
-// Enables Foundry Agent Service to provision and manage ACA containers for
-// hosted agents deployed to this Foundry account. Must be created once per
-// Foundry account.
-// Note: enablePublicHostingEnvironment is not a valid property in any stable
-// API version. Omitting it provisions the capability host correctly for public
-// (non-VNet) deployments.
-resource capabilityHost 'Microsoft.CognitiveServices/accounts/capabilityHosts@2025-12-01' = {
-  name: 'accountcaphost'
-  parent: foundryAccount
-  properties: {
-    capabilityHostKind: 'Agents'
-  }
-}
-// ── Project Capability Host ────────────────────────────────
-// The refreshed Hosted Agents preview (April 2026) requires a capability host
-// at the *project* level in addition to the account level. Without it,
-// `client.agents.create_version()` returns a generic `(server_error) 500`
-// because the project has no agent hosting backend bound to it. Discovered
-// empirically; not yet documented at
-// learn.microsoft.com/azure/foundry/agents/how-to/create-agents-resource.
-resource projectCapabilityHost 'Microsoft.CognitiveServices/accounts/projects/capabilityHosts@2025-12-01' = {
-  name: 'projectcaphost'
-  parent: foundryProject
-  properties: {
-    capabilityHostKind: 'Agents'
-  }
-  dependsOn: [capabilityHost]
+  dependsOn: [appInsightsConnection]
 }
 // ── Outputs ─────────────────────────────────────────────────────────────────
 

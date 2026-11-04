@@ -29,7 +29,7 @@ Migration ref: https://learn.microsoft.com/azure/foundry/agents/how-to/migrate-h
 import os
 from pathlib import Path
 
-import httpx
+import httpx2
 from agent_framework import Agent, MCPStreamableHTTPTool, SkillsProvider
 from agent_framework.foundry import FoundryChatClient
 from agent_framework_foundry_hosting import ResponsesHostServer
@@ -50,9 +50,9 @@ load_dotenv(override=True)  # override=True required for Foundry-deployed env va
 # `User-Agent: claude-code/1.0` header is defensive insurance: Cloudflare
 # (the gateway in front of hcls.mcp.claude.com) blocks the default
 # `Python-urllib/*` UA but accepts any other identifier.
-_MCP_HTTP_CLIENT = httpx.AsyncClient(
+_MCP_HTTP_CLIENT = httpx2.AsyncClient(
     headers={"User-Agent": "claude-code/1.0"},
-    timeout=httpx.Timeout(60.0),
+    timeout=httpx2.Timeout(60.0),
 )
 
 

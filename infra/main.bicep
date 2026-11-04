@@ -32,12 +32,15 @@ param deploymentSkuName string = 'GlobalStandard'
 @description('Whether container images have been built to ACR (set automatically by postprovision hook)')
 param imagesBuilt string = ''
 
+@description('Tag of the last successfully deployed backend and frontend images')
+param imageTag string = ''
+
 // MCP server URLs (ICD-10, PubMed, ClinicalTrials.gov, NPI Registry, CMS Coverage)
-// are configured in each agent's `agent.yaml` (`MCP_ICD10_CODES`, `MCP_PUBMED`,
+// are configured in each root azure.yaml service's env (`MCP_ICD10_CODES`, `MCP_PUBMED`,
 // `MCP_CLINICAL_TRIALS`, `MCP_NPI_REGISTRY`, `MCP_CMS_COVERAGE`) and consumed
 // in-container by `agents/<name>/main.py`. The `azd ai agent` extension
 // propagates these into the running container at create_version() time, so they
-// can be overridden by editing `agent.yaml` and re-running `azd up` without
+// can be overridden by editing azure.yaml and re-running `azd up` without
 // touching this Bicep template.
 
 // ── Variables ───────────────────────────────────────────────────────────────
@@ -91,7 +94,7 @@ module aiFoundry './modules/ai-foundry.bicep' = {
     name: '${abbrs.aiFoundry}${resourceToken}'
     location: location
     tags: tags
-    appInsightsInstrumentationKey: monitoring.outputs.appInsightsInstrumentationKey
+    appInsightsConnectionString: monitoring.outputs.appInsightsConnectionString
     appInsightsResourceId: monitoring.outputs.appInsightsResourceId
     deploymentName: azureOpenAIDeploymentName
     deploymentSkuName: deploymentSkuName
@@ -124,7 +127,8 @@ module backend './modules/container-app.bicep' = {
     containerRegistryLoginServer: containerRegistry.outputs.loginServer
     imageName: 'backend'
     targetPort: 8000
-    useAcrImage: imagesBuilt == 'true'
+    useAcrImage: imagesBuilt == 'true' || !empty(imageTag)
+    imageTag: empty(imageTag) ? 'latest' : imageTag
     cpu: '1'
     memory: '2Gi'
     // Backend keeps in-memory state (`_review_store` in orchestrator, monotonic letter
@@ -137,7 +141,7 @@ module backend './modules/container-app.bicep' = {
       // Foundry project endpoint — backend calls Foundry Hosted Agents via the Responses API
       { name: 'AZURE_AI_PROJECT_ENDPOINT', value: aiFoundry.outputs.projectEndpoint }
       // Foundry Hosted Agent names (as registered by `azd deploy` via the
-      // `services:` block in azure.yaml; must match `name:` in each agent.yaml)
+      // `services:` block in azure.yaml; must match the service-level `name`)
       { name: 'HOSTED_AGENT_CLINICAL_NAME', value: 'clinical-reviewer-agent' }
       { name: 'HOSTED_AGENT_COVERAGE_NAME', value: 'coverage-assessment-agent' }
       { name: 'HOSTED_AGENT_COMPLIANCE_NAME', value: 'compliance-agent' }
@@ -182,7 +186,8 @@ module frontend './modules/container-app.bicep' = {
     containerRegistryLoginServer: containerRegistry.outputs.loginServer
     imageName: 'frontend'
     targetPort: 80
-    useAcrImage: imagesBuilt == 'true'
+    useAcrImage: imagesBuilt == 'true' || !empty(imageTag)
+    imageTag: empty(imageTag) ? 'latest' : imageTag
     minReplicas: 1
     env: [
       { name: 'BACKEND_URL', value: 'https://${abbrs.appContainerApps}backend-${resourceToken}.${containerAppsEnv.outputs.defaultDomain}' }
@@ -196,6 +201,8 @@ module frontend './modules/container-app.bicep' = {
 
 output AZURE_RESOURCE_GROUP string = rg.name
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
+output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name
+output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = containerRegistry.outputs.id
 output AI_FOUNDRY_ACCOUNT_NAME string = aiFoundry.outputs.accountName
 output AI_FOUNDRY_PROJECT_NAME string = aiFoundry.outputs.projectName
 output AI_FOUNDRY_ENDPOINT string = aiFoundry.outputs.endpoint
@@ -205,9 +212,10 @@ output AI_FOUNDRY_PORTAL_URL string = aiFoundry.outputs.portalUrl
 // services) so it can target the Foundry project that owns the agents.
 // FOUNDRY_PROJECT_ENDPOINT is the exact name the extension looks up — the
 // AI_FOUNDRY_* / AZURE_AI_* aliases below are consumed by this repo's own
-// hooks, backend and agent.yaml files.
+// hooks, backend and service-level env mappings.
 output AZURE_AI_PROJECT_ID string = aiFoundry.outputs.projectId
 output AZURE_AI_PROJECT_ENDPOINT string = aiFoundry.outputs.projectEndpoint
+output AZURE_AI_MODEL_DEPLOYMENT_NAME string = azureOpenAIDeploymentName
 output FOUNDRY_PROJECT_ENDPOINT string = aiFoundry.outputs.projectEndpoint
 output BACKEND_CONTAINER_APP_NAME string = backend.outputs.name
 output FRONTEND_CONTAINER_APP_NAME string = frontend.outputs.name
