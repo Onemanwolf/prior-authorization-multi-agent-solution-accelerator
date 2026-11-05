@@ -1,0 +1,29 @@
+name: construction-supply-genie-experiment
+requiredVersions:
+  azd: ">= 1.37.0"
+  extensions:
+    azure.ai.agents: ">= 1.0.0-beta.23"
+services:
+  supply-pricing-agent:
+    project: .
+    host: azure.ai.agent
+    language: docker
+    docker:
+      remoteBuild: true
+    name: supply-pricing-agent
+    kind: hosted
+    protocols:
+      - protocol: responses
+        version: 2.0.0
+    container:
+      resources:
+        cpu: "1"
+        memory: 2Gi
+    startupCommand: python main.py
+    env:
+      PYTHONNOUSERSITE: "1"
+      MODEL_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME}
+      AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME}
+      AZURE_AI_PROJECT_ENDPOINT: ${AI_FOUNDRY_PROJECT_ENDPOINT}
+      DATABRICKS_HOST: ${DATABRICKS_HOST}
+      DATABRICKS_GENIE_SPACE_ID: ${DATABRICKS_GENIE_SPACE_ID}

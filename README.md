@@ -48,6 +48,8 @@ Decision policy and evaluation methodology adapted from the [Anthropic prior-aut
 
 See the [Deployment Guide](./docs/DeploymentGuide.md) for full prerequisites and step-by-step instructions.
 
+An opt-in construction-supplies experiment adds a Databricks workspace, synthetic seed data, a Genie MCP space, and an isolated Foundry supply agent. Set `ENABLE_DATABRICKS=true` for `azd up`; if Databricks bootstrap is not ready, the supply agent is skipped and the prior-authorization deployment continues. See [docs/databricks-construction-supply.md](./docs/databricks-construction-supply.md) for CLI and managed-identity prerequisites.
+
 **Prerequisites:** Azure subscription · [azd ≥ 1.37.0](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) · Foundry agents extension ≥ 1.0.0-beta.23 · [PowerShell 7 on Windows](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) · [GPT-5.4 access request](https://aka.ms/OAI/gpt53codexaccess). Local Docker is needed for Docker Compose or local image builds, not the configured remote ACR builds.
 
 **Windows:** Open PowerShell 7 and run this in the same terminal before the deployment commands below:

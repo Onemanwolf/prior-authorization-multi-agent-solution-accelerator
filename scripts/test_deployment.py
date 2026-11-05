@@ -10,7 +10,7 @@ import subprocess
 import tempfile
 import unittest
 from contextlib import redirect_stderr, redirect_stdout
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import yaml
 
@@ -79,6 +79,28 @@ class DeploymentConfigurationTests(unittest.TestCase):
         self.assertIn("param imageTag string = ''", infrastructure)
         self.assertEqual(infrastructure.count("useAcrImage: imagesBuilt == 'true' || !empty(imageTag)"), 2)
 
+    def test_databricks_workspace_is_opt_in(self):
+        parameters = json.loads((ROOT / "infra/main.parameters.json").read_text(encoding="utf-8-sig"))
+        self.assertEqual(parameters["parameters"]["enableDatabricks"]["value"], "${ENABLE_DATABRICKS}")
+        infrastructure = (ROOT / "infra/main.bicep").read_text(encoding="utf-8-sig")
+        self.assertIn("param enableDatabricks string = 'false'", infrastructure)
+        self.assertRegex(infrastructure, r"module databricks '[^']+' = if \(enableDatabricks == 'true'\)")
+        self.assertIn("output DATABRICKS_HOST string", infrastructure)
+        self.assertIn("output DATABRICKS_AZURE_RESOURCE_ID string", infrastructure)
+        self.assertIn("output DATABRICKS_ACCESS_CONNECTOR_ID string", infrastructure)
+        self.assertIn("output DATABRICKS_STORAGE_URL string", infrastructure)
+        module = (ROOT / "infra/modules/databricks.bicep").read_text(encoding="utf-8-sig")
+        self.assertIn("Microsoft.Databricks/workspaces@2024-05-01", module)
+        self.assertNotIn("initialName:", module)
+        self.assertIn("br/public:avm/res/databricks/access-connector:", module)
+        self.assertIn("br/public:avm/res/storage/storage-account:", module)
+        for setting in ("enableHierarchicalNamespace: true", "allowSharedKeyAccess: false",
+                        "allowBlobPublicAccess: false", "systemAssigned: true",
+                        "roleDefinitionIdOrName: 'Storage Blob Data Contributor'",
+                        "principalId: accessConnector.outputs.systemAssignedMIPrincipalId!"):
+            self.assertIn(setting, module)
+        self.assertIn("abfss://unity-catalog@", module)
+
     def test_retired_capability_hosts_are_not_provisioned(self):
         source = (ROOT / "infra/modules/ai-foundry.bicep").read_text(encoding="utf-8-sig")
         self.assertNotRegex(source, r"resource\s+\w+\s+'[^']*/capabilityHosts@")
@@ -118,6 +140,25 @@ class DeploymentConfigurationTests(unittest.TestCase):
                         result = subprocess.run([executable, "-NoProfile", "-NonInteractive", "-Command", command], env={**os.environ, "AZD_HOOK_TEST_PATH": str(path)}, text=True, encoding="utf-8", errors="replace", capture_output=True, timeout=30)
                         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_windows_quota_queries_count_json_resources(self):
+        source = self.project["hooks"]["preprovision"]["windows"]["run"]
+        self.assertNotIn('--query "length(', source)
+        for resource_command in (
+            "containerapp env list",
+            "acr list",
+            "cognitiveservices account list",
+        ):
+            with self.subTest(command=resource_command):
+                self.assertIn(f"az {resource_command} -o json", source)
+        self.assertEqual(source.count("Where-Object { $_.location -eq $region }"), 3)
+
+    def test_supply_postdeploy_configures_databricks_access(self):
+        for shell in ("windows", "posix"):
+            with self.subTest(shell=shell):
+                source = self.project["hooks"]["postdeploy"][shell]["run"]
+                self.assertIn("grant_agent_rbac.py --agent supply-pricing-agent --databricks", source)
+                self.assertLess(source.index("deploy_supply_agent.py"), source.index("--databricks"))
+
     def test_posix_hook_syntax(self):
         executable = shutil.which("sh")
         if not executable:
@@ -133,6 +174,96 @@ class DeploymentConfigurationTests(unittest.TestCase):
 
 
 class AgentRbacTests(unittest.TestCase):
+    def _access_request_mock(self, *, preview_enabled=True, assigned=False, existing=True, unexpected_table=False):
+        def respond(host, method, endpoint, body=None):
+            principal = {"applicationId": "supply-client", "id": "123", "active": True}
+            if method == "get" and "account/scim" in endpoint:
+                return {"Resources": [principal] if existing else []}
+            if method == "post" and "account/scim" in endpoint:
+                return principal
+            if method == "get" and endpoint.endswith("permissionassignments"):
+                return {"permission_assignments": [{"principal": {"principal_id": 123}, "permissions": ["USER"]}] if assigned else []}
+            if method == "get" and "/genie/spaces/" in endpoint:
+                self.assertIn("include_serialized_space=true", endpoint)
+                tables = [{"identifier": f"construction_supply.construction_supply_demo.{name}"}
+                          for name in ("branches", "inventory", "order_lines", "prices", "products")]
+                if unexpected_table:
+                    tables.append({"identifier": "production.secret.table"})
+                return {"warehouse_id": "demo-warehouse", "serialized_space": json.dumps({"data_sources": {"tables": tables}})}
+            if "/mcp/genie/" in endpoint:
+                if not preview_enabled:
+                    raise RuntimeError("Managed MCP Servers are not enabled")
+                return {"result": {"capabilities": {}}}
+            return {}
+        return Mock(side_effect=respond)
+
+    def test_databricks_grants_are_additive_and_scoped(self):
+        request = self._access_request_mock()
+        with patch.object(grant_agent_rbac, "_databricks_request", request), \
+                patch.object(grant_agent_rbac, "_azd_env", return_value="configured"), \
+                patch.object(grant_agent_rbac, "_run") as run:
+            grant_agent_rbac._grant_databricks_access("supply-client")
+        patches = [call.args for call in request.call_args_list if call.args[1] == "patch"]
+        self.assertEqual(len(patches), 10)
+        for _, _, endpoint, body in patches:
+            if "scim/v2/ServicePrincipals" in endpoint:
+                self.assertEqual(body["Operations"], [{"op": "add", "path": "entitlements",
+                                                       "value": [{"value": "databricks-sql-access"}]}])
+            elif "unity-catalog" in endpoint:
+                change = body["changes"][0]
+                self.assertEqual(change["principal"], "supply-client")
+                self.assertNotIn("remove", change)
+                self.assertTrue(set(change["add"]) <= {"USE_CATALOG", "USE_SCHEMA", "SELECT"})
+            else:
+                self.assertIn(body["access_control_list"][0]["permission_level"], {"CAN_RUN", "CAN_USE"})
+        assignments = [call.args for call in request.call_args_list if call.args[1] == "put"]
+        self.assertEqual(assignments[0][3], {"permissions": ["USER"]})
+        self.assertEqual(run.call_args.args[0][-2:], ["SUPPLY_AGENT_DATABRICKS_ACCESS_READY", "true"])
+
+    def test_databricks_existing_identity_and_assignment_are_reused(self):
+        request = self._access_request_mock(assigned=True)
+        with patch.object(grant_agent_rbac, "_databricks_request", request), \
+                patch.object(grant_agent_rbac, "_azd_env", return_value="configured"), \
+                patch.object(grant_agent_rbac, "_run"):
+            grant_agent_rbac._grant_databricks_access("supply-client")
+        self.assertFalse(any(call.args[1] == "put" or (call.args[1] == "post" and "account/scim" in call.args[2])
+                             for call in request.call_args_list))
+
+    def test_databricks_missing_identity_is_registered(self):
+        request = self._access_request_mock(existing=False)
+        with patch.object(grant_agent_rbac, "_databricks_request", request), \
+                patch.object(grant_agent_rbac, "_azd_env", return_value="configured"), \
+                patch.object(grant_agent_rbac, "_run"):
+            grant_agent_rbac._grant_databricks_access("supply-client")
+        created = [call.args[3] for call in request.call_args_list if call.args[1] == "post" and "account/scim" in call.args[2]]
+        self.assertEqual(created[0]["applicationId"], "supply-client")
+        self.assertNotIn("groups", created[0])
+
+    def test_disabled_mcp_preview_never_marks_access_ready(self):
+        request = self._access_request_mock(preview_enabled=False)
+        with patch.object(grant_agent_rbac, "_databricks_request", request), \
+                patch.object(grant_agent_rbac, "_azd_env", return_value="configured"), \
+                patch.object(grant_agent_rbac, "_run") as run, \
+                self.assertRaisesRegex(RuntimeError, "Managed MCP Servers"):
+            grant_agent_rbac._grant_databricks_access("supply-client")
+        run.assert_called_once_with(["azd", "env", "set", "SUPPLY_AGENT_DATABRICKS_ACCESS_READY", "false"])
+
+    def test_unexpected_genie_tables_never_receive_grants(self):
+        request = self._access_request_mock(unexpected_table=True)
+        with patch.object(grant_agent_rbac, "_databricks_request", request), \
+                patch.object(grant_agent_rbac, "_azd_env", return_value="configured"), \
+                patch.object(grant_agent_rbac, "_run"), self.assertRaisesRegex(RuntimeError, "Refusing grants"):
+            grant_agent_rbac._grant_databricks_access("supply-client")
+        self.assertFalse(any(call.args[1] == "patch" and "scim" not in call.args[2] for call in request.call_args_list))
+
+    def test_windows_azure_cli_uses_native_python_launcher(self):
+        with patch.object(grant_agent_rbac.sys, "platform", "win32"), \
+                patch.object(grant_agent_rbac.shutil, "which", return_value="C:/CLI/wbin/az.cmd"), \
+                patch.object(Path, "is_file", return_value=True):
+            command = grant_agent_rbac._command(["az", "account", "show"])
+        self.assertEqual(command[1:], ["-IBm", "azure.cli", "account", "show"])
+        self.assertEqual(Path(command[0]), Path("C:/CLI/python.exe"))
+
     def test_latest_version_uses_current_api(self):
         latest = {"version": "12", "instance_identity": {"principal_id": "test-principal"}}
         response = io.BytesIO(json.dumps({"versions": {"latest": latest}}).encode())

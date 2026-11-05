@@ -35,6 +35,9 @@ param imagesBuilt string = ''
 @description('Tag of the last successfully deployed backend and frontend images')
 param imageTag string = ''
 
+@description('Set to true to provision the experimental construction-supplies Databricks workspace')
+param enableDatabricks string = 'false'
+
 // MCP server URLs (ICD-10, PubMed, ClinicalTrials.gov, NPI Registry, CMS Coverage)
 // are configured in each root azure.yaml service's env (`MCP_ICD10_CODES`, `MCP_PUBMED`,
 // `MCP_CLINICAL_TRIALS`, `MCP_NPI_REGISTRY`, `MCP_CMS_COVERAGE`) and consumed
@@ -61,6 +64,17 @@ resource rg 'Microsoft.Resources/resourceGroups@2024-03-01' = {
 }
 
 // ── Container Registry ──────────────────────────────────────────────────────
+
+module databricks './modules/databricks.bicep' = if (enableDatabricks == 'true') {
+  name: 'databricks'
+  scope: rg
+  params: {
+    name: 'dbw-${resourceToken}'
+    location: location
+    managedResourceGroupName: 'rg-dbw-managed-${resourceToken}'
+    tags: tags
+  }
+}
 
 module containerRegistry './modules/container-registry.bicep' = {
   name: 'container-registry'
@@ -200,6 +214,10 @@ module frontend './modules/container-app.bicep' = {
 // ── Outputs ─────────────────────────────────────────────────────────────────
 
 output AZURE_RESOURCE_GROUP string = rg.name
+output DATABRICKS_HOST string = enableDatabricks == 'true' ? databricks!.outputs.host : ''
+output DATABRICKS_AZURE_RESOURCE_ID string = enableDatabricks == 'true' ? databricks!.outputs.workspaceId : ''
+output DATABRICKS_ACCESS_CONNECTOR_ID string = enableDatabricks == 'true' ? databricks!.outputs.accessConnectorId : ''
+output DATABRICKS_STORAGE_URL string = enableDatabricks == 'true' ? databricks!.outputs.storageUrl : ''
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.outputs.loginServer
 output AZURE_CONTAINER_REGISTRY_NAME string = containerRegistry.outputs.name
 output AZURE_CONTAINER_REGISTRY_RESOURCE_ID string = containerRegistry.outputs.id

@@ -1,0 +1,10 @@
+.azure/
+.foundry/
+.venv/
+.env
+.env.*
+__pycache__/
+*.pyc
+*.pem
+*.key
+.databrickscfg

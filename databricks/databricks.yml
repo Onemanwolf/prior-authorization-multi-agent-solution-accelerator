@@ -1,0 +1,65 @@
+bundle:
+  name: construction-supply-data
+  databricks_cli_version: ">= 1.3.0"
+  engine: direct
+
+variables:
+  catalog:
+    description: Unity Catalog catalog for synthetic construction supply data
+    default: construction_supply
+  storage_credential_name:
+    description: Connector-backed storage credential created by azd bootstrap
+  storage_url:
+    description: ADLS Gen2 external location URL provisioned by Bicep
+
+sync:
+  exclude:
+    - genie/**
+
+resources:
+  external_locations:
+    supply_storage:
+      name: ${var.storage_credential_name}_location
+      url: ${var.storage_url}
+      credential_name: ${var.storage_credential_name}
+      enable_file_events: false
+      skip_validation: false
+      comment: Synthetic construction supply demo managed storage
+  catalogs:
+    supply_catalog:
+      name: ${var.catalog}
+      storage_root: ${resources.external_locations.supply_storage.url}/catalog
+      comment: Synthetic construction supplies demonstration data only
+  sql_warehouses:
+    supply_warehouse:
+      name: construction-supply-demo-${bundle.target}
+      cluster_size: 2X-Small
+      warehouse_type: PRO
+      enable_serverless_compute: true
+      min_num_clusters: 1
+      max_num_clusters: 1
+      auto_stop_mins: 5
+      lifecycle:
+        started: false
+  jobs:
+    seed_supply:
+      name: construction-supply-demo-seed-${bundle.target}
+      description: Explicitly run to merge deterministic synthetic vendor data into the demo schema
+      max_concurrent_runs: 1
+      timeout_seconds: 900
+      tasks:
+        - task_key: seed
+          spark_python_task:
+            python_file: ./src/seed.py
+            parameters:
+              - --catalog
+              - ${var.catalog}
+          environment_key: default
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+
+targets:
+  dev:
+    default: true
