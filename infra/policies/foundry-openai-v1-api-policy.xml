@@ -1,0 +1,68 @@
+<!--
+  AI gateway policy for the "foundry-openai-v1" API (APIM -> Microsoft Foundry, OpenAI v1 surface).
+  Spec: Specs/001-apim-ai-gateway-api-center.md, section 6. Loaded by infra/modules/apim-ai-gateway.bicep.
+
+  Tokens replaced by Bicep at deploy time (loadTextContent + replace):
+    __TOKENS_PER_MINUTE__   per-agent tokens-per-minute limit (starts at 75000)
+    __BACKEND_ID__          APIM backend that points at https://<foundry>.openai.azure.com/openai/v1
+
+  Named values (APIM, maintained by Bicep and by the postdeploy hook):
+    ai-gateway-tenant-id            Entra tenant that issues agent tokens
+    ai-gateway-audience             token audience the agents request (https://cognitiveservices.azure.com)
+    ai-gateway-allowed-client-ids   comma-separated client IDs of the hosted-agent identities;
+                                    removing an ID is the per-agent kill switch
+-->
+<policies>
+    <inbound>
+        <base />
+        <!-- 1. Caller authentication: keyless Entra token from the hosted agent's identity -->
+        <validate-azure-ad-token tenant-id="{{ai-gateway-tenant-id}}" header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized: a valid Entra token is required" output-token-variable-name="callerJwt">
+            <audiences>
+                <audience>{{ai-gateway-audience}}</audience>
+            </audiences>
+        </validate-azure-ad-token>
+        <set-variable name="callerAppId" value="@{
+            var jwt = (Jwt)context.Variables[&quot;callerJwt&quot;];
+            var appId = jwt.Claims.GetValueOrDefault(&quot;appid&quot;, &quot;&quot;);
+            return string.IsNullOrEmpty(appId) ? jwt.Claims.GetValueOrDefault(&quot;azp&quot;, &quot;&quot;) : appId;
+        }" />
+        <!-- 2. Authorization: only registered hosted-agent identities (allowlist = kill switch) -->
+        <choose>
+            <when condition="@{
+                var allowed = (&quot;,&quot; + &quot;{{ai-gateway-allowed-client-ids}}&quot;.Replace(&quot; &quot;, &quot;&quot;) + &quot;,&quot;).ToLowerInvariant();
+                var caller = ((string)context.Variables[&quot;callerAppId&quot;]).ToLowerInvariant();
+                return string.IsNullOrEmpty(caller) || !allowed.Contains(&quot;,&quot; + caller + &quot;,&quot;);
+            }">
+                <return-response>
+                    <set-status code="403" reason="Forbidden" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>{"error":{"code":"AgentNotAuthorized","message":"This identity is not registered with the AI gateway."}}</set-body>
+                </return-response>
+            </when>
+        </choose>
+        <!-- 3. Token limit per agent identity: 429 + Retry-After when the TPM bucket is empty -->
+        <llm-token-limit counter-key="@((string)context.Variables[&quot;callerAppId&quot;])" tokens-per-minute="__TOKENS_PER_MINUTE__" estimate-prompt-tokens="false" retry-after-header-name="Retry-After" remaining-tokens-header-name="x-ratelimit-remaining-tokens" tokens-consumed-header-name="x-ai-gateway-tokens-consumed" />
+        <!-- 4. Token metrics to Application Insights (custom metrics with dimensions must be enabled) -->
+        <llm-emit-token-metric namespace="ai-gateway">
+            <dimension name="Agent Client ID" value="@((string)context.Variables[&quot;callerAppId&quot;])" />
+            <dimension name="API ID" />
+            <dimension name="Operation ID" />
+            <dimension name="Backend ID" />
+        </llm-emit-token-metric>
+        <!-- 5. Backend authentication: APIM managed identity -> Foundry (replaces the caller's Authorization header) -->
+        <authentication-managed-identity resource="https://cognitiveservices.azure.com" />
+        <set-backend-service backend-id="__BACKEND_ID__" />
+    </inbound>
+    <backend>
+        <!-- buffer-response=false keeps Responses API streaming (SSE) working through the gateway -->
+        <forward-request timeout="240" buffer-response="false" />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

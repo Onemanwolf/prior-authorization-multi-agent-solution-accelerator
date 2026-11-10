@@ -290,6 +290,45 @@ To add a custom MCP server, see [extending.md § Add a New MCP Server](extending
 </details>
 
 <details>
+<summary><b>AI Gateway (API Management) and API Center</b></summary>
+
+An opt-in **AI gateway** puts Azure API Management (BasicV2) between every hosted agent and the gpt-5.4 deployment. It enforces a **per-agent token limit (75,000 tokens per minute by default)** and emits per-agent token metrics. **Azure API Center** can be added as the registry for the gateway API and the MCP servers. Both are off by default. Design and decisions: [Specs/001](../Specs/001-apim-ai-gateway-api-center.md).
+
+```bash
+azd env set ENABLE_AI_GATEWAY true
+azd env set AI_GATEWAY_PUBLISHER_EMAIL you@contoso.com   # APIM notifications only
+azd env set AZURE_OPENAI_DEPLOYMENT_CAPACITY 100         # optional: model TPM (thousands), shared by all agents
+azd env set ENABLE_API_CENTER true                       # optional registry
+azd up
+```
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `ENABLE_AI_GATEWAY` | `false` | Deploy APIM and route hosted-agent model calls through it |
+| `AI_GATEWAY_SKU` | `BasicV2` | `BasicV2` or `StandardV2` (needed later for private endpoints) |
+| `AI_GATEWAY_TOKENS_PER_MINUTE` | `75000` | `llm-token-limit` per agent identity; change it and run `azd provision` |
+| `AZURE_OPENAI_DEPLOYMENT_CAPACITY` | `100` | Model deployment capacity in thousands of TPM |
+| `ENABLE_API_CENTER` | `false` | Deploy API Center (Free) with the MCP servers and APIM sync |
+| `API_CENTER_LOCATION` | `eastus` | API Center isn't available in East US 2 |
+
+**How it works**
+- Each hosted agent reads `AI_GATEWAY_OPENAI_BASE_URL`. When it's set, the agent calls `https://<apim>.azure-api.net/openai/v1/responses` with its own Entra token instead of the Foundry project endpoint.
+- The policy in `infra/policies/foundry-openai-v1-api-policy.xml` runs these checks in order:
+  1. Validates the token, or returns 401.
+  2. Admits only hosted-agent identities on the `ai-gateway-allowed-client-ids` allowlist, or returns 403.
+  3. Applies the token limit per agent, or returns 429 with `Retry-After`.
+  4. Emits token metrics to Application Insights.
+  5. Calls Foundry with APIM's managed identity.
+- The `postdeploy` hook (`scripts/sync_ai_gateway.py`) writes the allowlist from the deployed agents' identities.
+- `scripts/check_agents.py` confirms the gateway returns 401 without a token and 403 for the deployer.
+
+**Kill switch for one agent:** remove its client ID from the APIM named value `ai-gateway-allowed-client-ids`. `azd env get-value AI_GATEWAY_AGENT_CLIENT_IDS` maps agent names to client IDs. To restore it, run `python scripts/sync_ai_gateway.py`.
+
+> **Note:** This APIM instance is separate from the Foundry portal's **AI Gateway** feature in [5.4](#54-register-agents-in-foundry-control-plane-optional). Agent Service doesn't route hosted-agent model calls through the portal gateway. You can still pick this BasicV2 instance under *Use existing* there.
+
+</details>
+
+<details>
 <summary><b>Choose Deployment Method</b></summary>
 
 | **Aspect** | **azd up (Default)** | **Docker Compose** | **Local Dev** |
@@ -677,6 +716,8 @@ azd down
 ```
 
 This deletes all Azure resources provisioned by `azd up`, including the resource group, Container Registry, Container Apps, Log Analytics, and Application Insights.
+
+If the AI gateway was enabled, use `azd down --purge`. API Management is soft-deleted otherwise, and the next `azd up` with the same environment name fails until you run `az apim deletedservice purge --service-name <apim-name> --location <region>`.
 
 ### Manual Cleanup (if needed)
 

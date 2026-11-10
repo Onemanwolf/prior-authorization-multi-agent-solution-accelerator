@@ -87,6 +87,28 @@ class SupplyAgentTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValueError):
             databricks_auth.mcp_endpoint(HOST, '../sql')
 
+    def test_gateway_endpoint_is_strict(self):
+        url = 'https://apim-x.azure-api.net/mcp/databricks-genie/' + SPACE
+        self.assertEqual(databricks_auth.gateway_mcp_endpoint(url + '/'), url)
+        for value in ['http://apim-x.azure-api.net/mcp/x', 'https://example.com/mcp/x',
+                      'https://apim-x.azure-api.net', url + '?k=1', 'https://u:p@apim-x.azure-api.net/mcp/x']:
+            with self.assertRaises(ValueError):
+                databricks_auth.gateway_mcp_endpoint(value)
+
+    async def test_gateway_mode_sends_databricks_token_only_to_apim(self):
+        url = 'https://apim-x.azure-api.net/mcp/databricks-genie/' + SPACE
+        credential = Mock()
+        credential.get_token.return_value = SimpleNamespace(token='dbx')
+        seen = []
+        auth = databricks_auth.DatabricksManagedIdentityAuth(HOST, credential, url)
+        async with httpx2.AsyncClient(auth=auth, transport=httpx2.MockTransport(
+                lambda request: seen.append((request.url.host, request.headers['Authorization'])) or httpx2.Response(200))) as client:
+            await client.post(url)
+            with self.assertRaises(ValueError):
+                await client.get(HOST)
+        self.assertEqual(seen, [('apim-x.azure-api.net', 'Bearer dbx')])
+        credential.get_token.assert_called_once_with(databricks_auth.AZURE_DATABRICKS_RESOURCE_SCOPE)
+
     def test_managed_identity_resource_scope(self):
         self.assertEqual(
             databricks_auth.AZURE_DATABRICKS_RESOURCE_SCOPE,

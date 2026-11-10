@@ -40,6 +40,7 @@ Decision policy and evaluation methodology adapted from the [Anthropic prior-aut
 - **OpenTelemetry observability** — Native Application Insights integration with custom phase spans and semantic attributes
 - **Skills-based architecture** — Agent behaviors defined in `SKILL.md` files; domain experts can update clinical rules without code changes
 - **Two runtime modes** — Deploy to Azure with `azd up` (Foundry Hosted Agents) or run everything locally with `docker compose up`
+- **Optional AI gateway and API registry** — `ENABLE_AI_GATEWAY=true` routes every hosted agent's model calls through Azure API Management with a per-agent token limit (75K TPM default) and token metrics; `ENABLE_API_CENTER=true` registers the gateway API and MCP servers in Azure API Center ([Specs/001](./Specs/001-apim-ai-gateway-api-center.md))
 
 ---
 
@@ -49,6 +50,8 @@ Decision policy and evaluation methodology adapted from the [Anthropic prior-aut
 See the [Deployment Guide](./docs/DeploymentGuide.md) for full prerequisites and step-by-step instructions.
 
 An opt-in construction-supplies experiment adds a Databricks workspace, synthetic seed data, a Genie MCP space, and an isolated Foundry supply agent. Set `ENABLE_DATABRICKS=true` for `azd up`; if Databricks bootstrap is not ready, the supply agent is skipped and the prior-authorization deployment continues. See [docs/databricks-construction-supply.md](./docs/databricks-construction-supply.md) for CLI and managed-identity prerequisites.
+
+An opt-in AI gateway adds Azure API Management (BasicV2) in front of the model with a per-agent token limit of 75,000 tokens per minute, plus an optional Azure API Center registry. Set `ENABLE_AI_GATEWAY=true` (and optionally `ENABLE_API_CENTER=true`) before `azd up`. See [Deployment Guide § AI Gateway](./docs/DeploymentGuide.md#32-advanced-configuration-optional) and [Specs/001](./Specs/001-apim-ai-gateway-api-center.md). API Management bills hourly while it exists; use `azd down --purge` to remove it.
 
 **Prerequisites:** Azure subscription · [azd ≥ 1.37.0](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) · Foundry agents extension ≥ 1.0.0-beta.23 · [PowerShell 7 on Windows](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) · [GPT-5.4 access request](https://aka.ms/OAI/gpt53codexaccess). Local Docker is needed for Docker Compose or local image builds, not the configured remote ACR builds.
 

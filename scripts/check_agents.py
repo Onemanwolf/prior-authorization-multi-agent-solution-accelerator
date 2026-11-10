@@ -2,7 +2,8 @@
 """Pre-flight health check for all Foundry Hosted Agents (refreshed preview).
 
 Verifies agent registration + version status, App Insights connectivity,
-backend health, and frontend availability. Run after deployment to confirm
+backend health, frontend availability and, when the optional AI gateway is
+enabled, that the gateway rejects unauthenticated and non-agent callers. Run after deployment to confirm
 everything is ready before submitting PA requests.
 
 The refreshed preview replaces `az cognitiveservices agent show` with REST
@@ -24,9 +25,21 @@ Migration ref:
 import argparse
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
+
+# Windows consoles and captured pipes default to cp1252, which can't print the
+# check marks below. Force UTF-8 so the script doesn't crash.
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+# On Windows the Azure CLI is az.cmd, which subprocess can't find by the bare name "az".
+AZ = shutil.which("az") or "az"
 
 AGENTS = [
     "clinical-reviewer-agent",
@@ -77,7 +90,7 @@ def check_agents(account, project, expected_version=None):
         try:
             result = subprocess.run(
                 [
-                    "az", "rest", "--method", "GET",
+                    AZ, "rest", "--method", "GET",
                     "--url", f"{base_url}/agents/{name}?api-version={API_VERSION}",
                     "--resource", RESOURCE_AUDIENCE,
                 ],
@@ -100,12 +113,13 @@ def check_agents(account, project, expected_version=None):
                 # platform; agents read OTEL_CONNECTION_STRING and override the
                 # broken auto-injection at startup. See agents/*/main.py.
                 has_ai_cs = "OTEL_CONNECTION_STRING" in env_names
+                has_gateway = "AI_GATEWAY_OPENAI_BASE_URL" in env_names
                 version_ok = not expected_version or str(version) == str(expected_version)
                 status_ok = status == "active"
                 results.append({
                     "name": name, "version": version, "status": status,
                     "has_ai_cs": has_ai_cs, "version_ok": version_ok,
-                    "status_ok": status_ok,
+                    "status_ok": status_ok, "has_gateway": has_gateway,
                 })
                 if not (version_ok and status_ok):
                     all_ok = False
@@ -131,6 +145,8 @@ def check_agents(account, project, expected_version=None):
     for r in results:
         if r["status"] == "active" and not r["has_ai_cs"]:
             print(f"  WARNING: {r['name']} missing OTEL_CONNECTION_STRING (App Insights traces will be lost)")
+        if _get_azd_value("AI_GATEWAY_OPENAI_BASE_URL") and r["status"] == "active" and not r.get("has_gateway"):
+            print(f"  WARNING: {r['name']} has no AI_GATEWAY_OPENAI_BASE_URL; its model calls bypass the AI gateway")
 
     return all_ok, results
 
@@ -198,6 +214,56 @@ def check_frontend():
         return False
 
 
+def _gateway_probe(url, token=None):
+    """POST a minimal Responses request to the gateway; return the HTTP status."""
+    import urllib.error
+    import urllib.request
+
+    body = json.dumps({"model": _get_azd_value("AZURE_OPENAI_DEPLOYMENT_NAME") or "gpt-5.4",
+                       "input": "ping", "max_output_tokens": 16}).encode("utf-8")
+    headers = {"Content-Type": "application/json"}
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    req = urllib.request.Request(f"{url.rstrip('/')}/responses", data=body, headers=headers, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            return resp.status
+    except urllib.error.HTTPError as exc:
+        return exc.code
+
+
+def check_ai_gateway():
+    """Prove the AI gateway enforces auth: no token -> 401, deployer token -> 403.
+
+    The deployer is never on the hosted-agent allowlist, so a 403 shows the
+    allowlist is active without spending model tokens. Agent traffic itself is
+    proven by the agent checks and a review run (Specs/001, acceptance tests).
+    """
+    _section("AI Gateway (API Management)")
+    url = _get_azd_value("AI_GATEWAY_OPENAI_BASE_URL")
+    if not url:
+        print("  SKIP: AI gateway not enabled (ENABLE_AI_GATEWAY)")
+        return True
+    print(f"  Gateway: {url}")
+    try:
+        anonymous = _gateway_probe(url)
+        token = subprocess.run(
+            [AZ, "account", "get-access-token", "--resource", "https://cognitiveservices.azure.com",
+             "--query", "accessToken", "-o", "tsv"],
+            capture_output=True, text=True, timeout=30,
+        ).stdout.strip()
+        deployer = _gateway_probe(url, token) if token else None
+    except Exception as e:
+        print(f"  Gateway probe FAILED ({e})")
+        return False
+    ok = anonymous == 401 and deployer == 403
+    print(f"  no token        -> {anonymous} (expect 401)")
+    print(f"  deployer token  -> {deployer} (expect 403, not on the agent allowlist)")
+    if deployer == 200:
+        print("  WARNING: a non-agent identity got through; check the ai-gateway-allowed-client-ids named value")
+    return ok
+
+
 def main():
     parser = argparse.ArgumentParser(description="Pre-flight health check for Foundry Hosted Agents")
     parser.add_argument("--poll", action="store_true", help="Poll until all agents are ready")
@@ -219,6 +285,7 @@ def main():
     insights_ok = check_app_insights()
     backend_ok = check_backend()
     frontend_ok = check_frontend()
+    gateway_ok = check_ai_gateway()
 
     # --- Summary ---
     _section("Summary")
@@ -227,6 +294,7 @@ def main():
         ("App Insights Connection", insights_ok),
         ("Backend Health", backend_ok),
         ("Frontend Available", frontend_ok),
+        ("AI Gateway Enforcement", gateway_ok),
     ]
     all_ok = True
     for name, ok in checks:

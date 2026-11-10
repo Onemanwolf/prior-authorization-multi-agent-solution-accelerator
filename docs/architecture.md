@@ -261,6 +261,21 @@ MCP tools are visible in the Foundry portal under **Build → Tools**.
 
 ---
 
+### Optional AI Gateway (API Management)
+
+With `ENABLE_AI_GATEWAY=true`, model inference goes through Azure API Management instead of straight to the Foundry project endpoint. Agent-to-MCP and backend-to-agent traffic is unchanged.
+
+```
+Hosted agent ──(Entra token, aud cognitiveservices)──► APIM /openai/v1/*
+   validate-azure-ad-token → allowlist (appid) → llm-token-limit 75K TPM per agent
+   → llm-emit-token-metric → authentication-managed-identity
+   ──(APIM managed identity)──► https://<foundry>.openai.azure.com/openai/v1 (gpt-5.4)
+```
+
+- **Client switch:** `agents/*/model_client.py` returns `OpenAIChatClient(base_url=AI_GATEWAY_OPENAI_BASE_URL, credential=…)` when the variable is set, otherwise `FoundryChatClient`.
+- **Why not the Foundry portal gateway:** Foundry Agent Service doesn't route hosted-agent model calls through the portal-managed AI Gateway, so the agents call APIM directly. [Specs/001](../Specs/001-apim-ai-gateway-api-center.md) covers this decision.
+- **Registry:** with `ENABLE_API_CENTER=true`, Azure API Center registers the five remote MCP servers, plus the Databricks Genie MCP when deployed, and continuously imports the gateway API from APIM.
+
 ## Agent Details
 
 Each agent's execution is fully transparent in the frontend with Checks Summary tables.

@@ -30,9 +30,23 @@ def mcp_endpoint(host, space_id):
     return f'{workspace_host(host)}/api/2.0/mcp/genie/{space_id}'
 
 
+def gateway_mcp_endpoint(value):
+    """Validate the APIM AI gateway route for Genie (AI_GATEWAY_GENIE_MCP_URL)."""
+    parsed = urlsplit(value)
+    if (parsed.scheme != 'https' or not parsed.hostname
+            or not parsed.hostname.endswith('.azure-api.net')
+            or parsed.username or parsed.password or parsed.port not in (None, 443)
+            or not parsed.path.strip('/') or parsed.query or parsed.fragment):
+        raise ValueError('AI_GATEWAY_GENIE_MCP_URL must be an HTTPS API Management (*.azure-api.net) URL')
+    return f'https://{parsed.hostname}{parsed.path.rstrip("/")}'
+
+
 class DatabricksManagedIdentityAuth(httpx2.Auth):
-    def __init__(self, host, authenticate):
-        self.host = urlsplit(workspace_host(host)).hostname
+    def __init__(self, host, authenticate, gateway_url=None):
+        # With the AI gateway, the Databricks token goes to APIM, which checks the
+        # caller and passes the token on to Databricks. It is never sent anywhere else.
+        target = gateway_mcp_endpoint(gateway_url) if gateway_url else workspace_host(host)
+        self.host = urlsplit(target).hostname
         self.credential = authenticate
 
     async def async_auth_flow(self, request):

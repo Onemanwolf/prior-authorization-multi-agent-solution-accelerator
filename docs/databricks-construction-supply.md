@@ -220,6 +220,8 @@ azd ai agent show --output json
 Pop-Location
 ```
 
+For a step-by-step checklist that also covers prompt agents and the APIM AI gateway, see [databricks-agent-identity.md](databricks-agent-identity.md).
+
 Record `instance_identity.client_id` for Databricks and `instance_identity.principal_id` for Azure RBAC. Confirm the project endpoint, container version, `DATABRICKS_HOST`, and `DATABRICKS_GENIE_SPACE_ID` match the intended resources. The agent's instructions and tools are defined inside its hosted container; an empty portal Tools list does not prove its runtime MCP tool is absent.
 
 Reference: [Foundry hosted-agent identity and endpoints](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agents).

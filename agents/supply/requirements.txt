@@ -1,5 +1,7 @@
 agent-framework-core>=1.24.0,<2
 agent-framework-foundry>=1.10.4,<2
+# OpenAIChatClient (Responses API) for the optional AI gateway path (model_client.py)
+agent-framework-openai>=1.18.0,<2
 agent-framework-foundry-hosting>=1.0.0b260730,<2
 azure-ai-agentserver-core>=2.0.0,<3
 azure-identity>=1.15.0,<2

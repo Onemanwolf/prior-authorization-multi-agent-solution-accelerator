@@ -6,7 +6,8 @@ NCCI bundling risk, service type — are non-blocking and informational).
 Uses no external tools — pure reasoning over the submitted request data.
 
 Deployed as a Foundry Hosted Agent using the refreshed preview stack:
-  - FoundryChatClient (agent-framework-foundry) — model bridge
+  - FoundryChatClient (agent-framework-foundry) — model bridge, or the AI gateway
+    via model_client.build_chat_client when AI_GATEWAY_OPENAI_BASE_URL is set
   - Agent (agent-framework-core)                — agent definition + tools
   - ResponsesHostServer (agent-framework-foundry-hosting) — HTTP host
 
@@ -21,7 +22,6 @@ import os
 from pathlib import Path
 
 from agent_framework import Agent, SkillsProvider
-from agent_framework.foundry import FoundryChatClient
 from agent_framework_foundry_hosting import ResponsesHostServer
 from azure.identity import (
     AzureDeveloperCliCredential,
@@ -30,6 +30,7 @@ from azure.identity import (
     ManagedIdentityCredential,
 )
 from dotenv import load_dotenv
+from model_client import build_chat_client
 
 from schemas import ComplianceResult
 
@@ -120,12 +121,7 @@ def main() -> None:
     else:
         credential = DefaultAzureCredential()
 
-    chat_client = FoundryChatClient(
-        project_endpoint=project_endpoint,
-        model=model,
-        credential=credential,
-        allow_preview=True,
-    )
+    chat_client = build_chat_client(credential, project_endpoint, model)
 
     # default_options enforces ComplianceResult schema on every agent.run() call.
     # `store: False` is mandatory in the refreshed preview because the platform

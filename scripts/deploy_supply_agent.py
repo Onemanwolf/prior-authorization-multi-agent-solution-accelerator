@@ -27,12 +27,16 @@ SYNC_KEYS = (
     "DATABRICKS_HOST",
     "DATABRICKS_GENIE_SPACE_ID",
 )
+# Synchronized even when empty so disabling the AI gateway also clears it in the
+# nested environment (an empty value makes the agent call Foundry directly).
+CLEARABLE_SYNC_KEYS = ("AI_GATEWAY_OPENAI_BASE_URL", "AI_GATEWAY_GENIE_MCP_URL")
 
 
 def deploy(
     get_value: Callable[[str], str],
     set_value: Callable[[str, str], None],
     run: Callable[[list[str], Path], bool],
+    prepare_gateway: Callable[[], object] | None = None,
 ) -> bool:
     set_value("SUPPLY_AGENT_DEPLOYED", "false")
     if get_value("DATABRICKS_READY").lower() != "true":
@@ -44,6 +48,10 @@ def deploy(
     if missing:
         print(f"Databricks readiness is incomplete ({', '.join(missing)}); skipping the supply agent.")
         return False
+
+    if prepare_gateway is not None:
+        # Creates the APIM Genie route and sets AI_GATEWAY_GENIE_MCP_URL (or clears it).
+        prepare_gateway()
 
     root_env = get_value("AZURE_ENV_NAME") or "dev"
     suffix = re.sub(r"[^a-zA-Z0-9_-]", "-", root_env)
@@ -62,9 +70,9 @@ def deploy(
         # An existing nested environment is expected on repeated azd up runs.
         print(f"Using existing supply-agent azd environment {child_env}.")
 
-    for key in SYNC_KEYS:
+    for key in SYNC_KEYS + CLEARABLE_SYNC_KEYS:
         value = get_value(key)
-        if value:
+        if value or key in CLEARABLE_SYNC_KEYS:
             if not run(["azd", "env", "set", key, value, "--environment", child_env], SUPPLY_PROJECT):
                 print(f"Could not synchronize {key}; skipping the supply agent.")
                 return False
@@ -99,9 +107,21 @@ def _run(arguments: list[str], cwd: Path) -> bool:
     return result.returncode == 0
 
 
+def _prepare_gateway() -> None:
+    sys.path.insert(0, str(Path(__file__).resolve().parent))
+    from sync_ai_gateway import ensure_genie_mcp_route
+
+    try:
+        ensure_genie_mcp_route()
+    except subprocess.CalledProcessError as exc:
+        # Fall back to direct Databricks calls rather than deploying a broken route.
+        print(f"WARNING: could not create the Genie MCP gateway route: {exc.stderr or exc}")
+        _set_azd_value("AI_GATEWAY_GENIE_MCP_URL", "")
+
+
 def main() -> int:
     try:
-        deploy(_azd_value, _set_azd_value, _run)
+        deploy(_azd_value, _set_azd_value, _run, _prepare_gateway)
     except (OSError, RuntimeError) as exc:
         print(f"Supply-agent hook could not run azd: {exc}")
         return 0

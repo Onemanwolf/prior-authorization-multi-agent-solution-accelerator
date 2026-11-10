@@ -360,6 +360,22 @@ agent deployment.
 
 ---
 
+## AI gateway returns 401, 403 or 429
+
+Applies only when `ENABLE_AI_GATEWAY=true` ([Specs/001](../Specs/001-apim-ai-gateway-api-center.md)). The agent's model call fails with one of these status codes from `*.azure-api.net`.
+
+| Status | Meaning | Fix |
+|--------|---------|-----|
+| 401 | Missing or invalid Entra token (wrong tenant, or audience isn't `https://cognitiveservices.azure.com`) | Check the agent's `AZURE_CLIENT_ID` / managed identity; agents must be built with `model_client.build_chat_client` |
+| 403 `AgentNotAuthorized` | The calling identity isn't on the `ai-gateway-allowed-client-ids` allowlist. This is common right after a first deploy or a publish, because both create new identities. | Run `python scripts/sync_ai_gateway.py`, then compare `azd env get-value AI_GATEWAY_AGENT_CLIENT_IDS` with the named value in the portal |
+| 429 + `Retry-After` | The agent exceeded `AI_GATEWAY_TOKENS_PER_MINUTE` (75,000 by default), or Foundry itself throttled (the 100K TPM deployment is shared by all agents) | Check `x-ratelimit-remaining-tokens`; raise `AZURE_OPENAI_DEPLOYMENT_CAPACITY` or the gateway limit and run `azd provision` |
+
+Gateway logs are in Log Analytics (`ApiManagementGatewayLogs`, `ApiManagementGatewayLlmLog`). Per-agent token metrics are in Application Insights under the `ai-gateway` custom metric namespace.
+
+To bypass the gateway temporarily, run `azd env set ENABLE_AI_GATEWAY false`, then `azd up`. The output `AI_GATEWAY_OPENAI_BASE_URL` becomes empty and agents call Foundry directly again.
+
+**Redeploy fails with `ServiceAlreadyExistsInSoftDeletedState`:** the environment was removed with `azd down` without `--purge`. Run `az apim deletedservice purge --service-name <apim-name> --location <region>` and retry.
+
 ## Agent Registration Fails with PermissionDenied on First Run
 
 `azd deploy` (or `azd ai agent` directly) fails with:

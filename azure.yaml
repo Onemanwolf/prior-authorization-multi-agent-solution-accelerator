@@ -31,6 +31,7 @@ services:
       AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME}
       AZURE_AI_PROJECT_ENDPOINT: ${AI_FOUNDRY_PROJECT_ENDPOINT}
       OTEL_CONNECTION_STRING: ${APPLICATION_INSIGHTS_CONNECTION_STRING}
+      AI_GATEWAY_OPENAI_BASE_URL: ${AI_GATEWAY_OPENAI_BASE_URL}
       MCP_ICD10_CODES: https://hcls.mcp.claude.com/icd10_codes/mcp
       MCP_PUBMED: https://pubmed.mcp.claude.com/mcp
       MCP_CLINICAL_TRIALS: https://hcls.mcp.claude.com/clinical_trials/mcp
@@ -56,6 +57,7 @@ services:
       AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME}
       AZURE_AI_PROJECT_ENDPOINT: ${AI_FOUNDRY_PROJECT_ENDPOINT}
       OTEL_CONNECTION_STRING: ${APPLICATION_INSIGHTS_CONNECTION_STRING}
+      AI_GATEWAY_OPENAI_BASE_URL: ${AI_GATEWAY_OPENAI_BASE_URL}
     startupCommand: python main.py
   coverage-assessment-agent:
     project: ./agents/coverage
@@ -78,6 +80,7 @@ services:
       AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME}
       AZURE_AI_PROJECT_ENDPOINT: ${AI_FOUNDRY_PROJECT_ENDPOINT}
       OTEL_CONNECTION_STRING: ${APPLICATION_INSIGHTS_CONNECTION_STRING}
+      AI_GATEWAY_OPENAI_BASE_URL: ${AI_GATEWAY_OPENAI_BASE_URL}
       MCP_NPI_REGISTRY: https://hcls.mcp.claude.com/npi_registry/mcp
       MCP_CMS_COVERAGE: https://hcls.mcp.claude.com/cms_coverage/mcp
     startupCommand: python main.py
@@ -102,6 +105,7 @@ services:
       AZURE_OPENAI_DEPLOYMENT_NAME: ${AZURE_OPENAI_DEPLOYMENT_NAME}
       AZURE_AI_PROJECT_ENDPOINT: ${AI_FOUNDRY_PROJECT_ENDPOINT}
       OTEL_CONNECTION_STRING: ${APPLICATION_INSIGHTS_CONNECTION_STRING}
+      AI_GATEWAY_OPENAI_BASE_URL: ${AI_GATEWAY_OPENAI_BASE_URL}
     startupCommand: python main.py
 hooks:
   postdeploy:
@@ -134,6 +138,16 @@ hooks:
             if ($LASTEXITCODE -ne 0) {
             Write-Host "  WARNING: supply-agent Foundry or Databricks access did not complete - review output above" -ForegroundColor Yellow
             }
+        }
+
+        # ── AI gateway allowlist + API Center registrations (Specs/001) ──
+        # No-op unless ENABLE_AI_GATEWAY / ENABLE_API_CENTER are true. Runs after the
+        # supply agent so its identity is on the gateway allowlist too.
+        Write-Host ""
+        Write-Host "  Syncing AI gateway allowlist and API Center registrations..." -ForegroundColor Yellow
+        Invoke-Expression "$py scripts/sync_ai_gateway.py"
+        if ($LASTEXITCODE -ne 0) {
+            Write-Host "  WARNING: AI gateway / API Center sync did not complete - review output above" -ForegroundColor Yellow
         }
 
         # ── Post-deploy health check (agents now exist with versions) ──
@@ -209,6 +223,12 @@ hooks:
             fi
         else
             printf "${Yellow}  WARNING: optional supply-agent deployment did not complete - review output above${NC}\n"
+        fi
+
+        # AI gateway allowlist + API Center registrations (Specs/001); no-op when disabled
+        printf "\n${Yellow}  Syncing AI gateway allowlist and API Center registrations...${NC}\n"
+        if ! "$PY" scripts/sync_ai_gateway.py; then
+            printf "${Yellow}  WARNING: AI gateway / API Center sync did not complete - review output above${NC}\n"
         fi
 
         printf "\n${Yellow}  Running post-deploy health check...${NC}\n"

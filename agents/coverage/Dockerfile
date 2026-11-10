@@ -20,7 +20,7 @@ RUN pip install --no-cache-dir -r requirements.txt && \
 
 # Copy agent code and skills
 COPY main.py ./
-COPY schemas.py ./
+COPY schemas.py model_client.py ./
 COPY skills/ ./skills/
 
 # Runs as root by design. Foundry injects HOME=/home/session and mounts the

@@ -59,6 +59,19 @@ jobs:
       - run: python -m pip install "PyYAML>=6,<7"
       - run: python -m unittest scripts.test_databricks -v
 
+  ai_gateway_contracts:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: python -m pip install "PyYAML>=6,<7" -r agents/compliance/requirements.txt
+      - run: python -m unittest scripts.test_ai_gateway -v
+      - run: az bicep build --file infra/main.bicep --stdout > /dev/null
+
   supply_agent_contracts:
     runs-on: ubuntu-latest
     permissions:

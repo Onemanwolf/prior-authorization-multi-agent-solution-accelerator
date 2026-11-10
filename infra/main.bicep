@@ -38,6 +38,43 @@ param imageTag string = ''
 @description('Set to true to provision the experimental construction-supplies Databricks workspace')
 param enableDatabricks string = 'false'
 
+@description('Model deployment capacity in thousands of tokens per minute. Must be >= the AI gateway per-agent limit (75 by default); raise it so several agents can use their allowance at once.')
+param deploymentCapacityK string = '100'
+
+// ── AI gateway (API Management) + API Center — Specs/001-apim-ai-gateway-api-center.md ──
+
+@description('Set to true to route hosted-agent model calls through an API Management AI gateway')
+param enableAiGateway string = 'false'
+
+@description('API Management v2 tier for the AI gateway')
+@allowed(['BasicV2', 'StandardV2'])
+param aiGatewaySku string = 'BasicV2'
+
+@description('Per-agent tokens-per-minute limit enforced by the llm-token-limit policy')
+param aiGatewayTokensPerMinute string = '75000'
+
+@description('API Management publisher email (APIM notifications only; a placeholder is used when empty)')
+param aiGatewayPublisherEmail string = ''
+
+@description('Comma-separated hosted-agent client IDs allowed through the gateway (maintained by the postdeploy hook)')
+param aiGatewayAllowedClientIds string = ''
+
+@description('Set to true to provision Azure API Center as the API and MCP server registry')
+param enableApiCenter string = 'false'
+
+@description('API Center region. API Center is not available in East US 2.')
+@allowed([
+  'australiaeast'
+  'canadacentral'
+  'centralindia'
+  'eastus'
+  'francecentral'
+  'swedencentral'
+  'uksouth'
+  'westeurope'
+])
+param apiCenterLocation string = 'eastus'
+
 // MCP server URLs (ICD-10, PubMed, ClinicalTrials.gov, NPI Registry, CMS Coverage)
 // are configured in each root azure.yaml service's env (`MCP_ICD10_CODES`, `MCP_PUBMED`,
 // `MCP_CLINICAL_TRIALS`, `MCP_NPI_REGISTRY`, `MCP_CMS_COVERAGE`) and consumed
@@ -112,6 +149,51 @@ module aiFoundry './modules/ai-foundry.bicep' = {
     appInsightsResourceId: monitoring.outputs.appInsightsResourceId
     deploymentName: azureOpenAIDeploymentName
     deploymentSkuName: deploymentSkuName
+    deploymentCapacityK: int(deploymentCapacityK)
+  }
+}
+
+// ── AI gateway: API Management in front of Foundry model inference ──────────
+// Hosted agents call AI_GATEWAY_OPENAI_BASE_URL instead of the project endpoint;
+// the gateway enforces a per-agent token limit and emits token metrics.
+
+module aiGateway './modules/apim-ai-gateway.bicep' = if (enableAiGateway == 'true') {
+  name: 'ai-gateway'
+  scope: rg
+  params: {
+    name: '${abbrs.apiManagementService}${resourceToken}'
+    location: location
+    tags: tags
+    skuName: aiGatewaySku
+    publisherEmail: empty(aiGatewayPublisherEmail) ? 'ai-gateway-admin@example.com' : aiGatewayPublisherEmail
+    foundryAccountName: aiFoundry.outputs.accountName
+    tokensPerMinute: int(aiGatewayTokensPerMinute)
+    allowedClientIds: aiGatewayAllowedClientIds
+    appInsightsResourceId: monitoring.outputs.appInsightsResourceId
+    appInsightsInstrumentationKey: monitoring.outputs.appInsightsInstrumentationKey
+    logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+  }
+}
+
+// ── API Center: registry for the gateway API and the remote MCP servers ─────
+// The Databricks Genie MCP server is registered by the postdeploy hook once its
+// space ID exists (scripts/sync_ai_gateway.py).
+
+module apiCenter './modules/api-center.bicep' = if (enableApiCenter == 'true') {
+  name: 'api-center'
+  scope: rg
+  params: {
+    name: '${abbrs.apiCenterService}${resourceToken}'
+    location: apiCenterLocation
+    tags: tags
+    apimName: enableAiGateway == 'true' ? aiGateway!.outputs.name : ''
+    mcpServers: [
+      { name: 'icd10-codes', title: 'ICD-10 Codes MCP', description: 'ICD-10 code lookup (Anthropic healthcare gateway)', url: 'https://hcls.mcp.claude.com/icd10_codes/mcp' }
+      { name: 'pubmed', title: 'PubMed MCP', description: 'PubMed literature search', url: 'https://pubmed.mcp.claude.com/mcp' }
+      { name: 'clinical-trials', title: 'Clinical Trials MCP', description: 'ClinicalTrials.gov search', url: 'https://hcls.mcp.claude.com/clinical_trials/mcp' }
+      { name: 'npi-registry', title: 'NPI Registry MCP', description: 'Provider NPI lookup', url: 'https://hcls.mcp.claude.com/npi_registry/mcp' }
+      { name: 'cms-coverage', title: 'CMS Coverage MCP', description: 'Medicare LCD/NCD coverage policies', url: 'https://hcls.mcp.claude.com/cms_coverage/mcp' }
+    ]
   }
 }
 
@@ -239,5 +321,12 @@ output BACKEND_CONTAINER_APP_NAME string = backend.outputs.name
 output FRONTEND_CONTAINER_APP_NAME string = frontend.outputs.name
 output AZURE_OPENAI_DEPLOYMENT_NAME string = azureOpenAIDeploymentName
 output APPLICATION_INSIGHTS_CONNECTION_STRING string = monitoring.outputs.appInsightsConnectionString
+// AI gateway / API Center — empty when disabled, so hosted agents fall back to
+// the Foundry project endpoint (see agents/*/model_client.py).
+output AI_GATEWAY_NAME string = enableAiGateway == 'true' ? aiGateway!.outputs.name : ''
+output AI_GATEWAY_URL string = enableAiGateway == 'true' ? aiGateway!.outputs.gatewayUrl : ''
+output AI_GATEWAY_OPENAI_BASE_URL string = enableAiGateway == 'true' ? aiGateway!.outputs.openAiV1BaseUrl : ''
+output API_CENTER_NAME string = enableApiCenter == 'true' ? apiCenter!.outputs.name : ''
+output API_CENTER_MCP_REGISTRY_URL string = enableApiCenter == 'true' ? apiCenter!.outputs.mcpRegistryUrl : ''
 output frontendUrl string = frontend.outputs.fqdn
 output backendUrl string = backend.outputs.fqdn

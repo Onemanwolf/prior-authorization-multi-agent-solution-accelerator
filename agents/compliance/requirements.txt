@@ -11,6 +11,8 @@
 # being deprecated on 2026-05-22.
 agent-framework-core>=1.13.0,<2
 agent-framework-foundry>=1.10.4,<2
+# OpenAIChatClient (Responses API) for the optional AI gateway path (model_client.py)
+agent-framework-openai>=1.18.0,<2
 agent-framework-foundry-hosting>=1.0.0b260730,<2
 # Protocol library — pulled transitively by agent-framework-foundry-hosting,
 # pinned here for reproducibility.

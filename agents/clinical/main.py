@@ -5,7 +5,8 @@ scoring, searches PubMed literature and ClinicalTrials.gov, and returns
 a structured clinical profile for downstream coverage assessment.
 
 Deployed as a Foundry Hosted Agent using the refreshed preview stack:
-  - FoundryChatClient (agent-framework-foundry) — model bridge
+  - FoundryChatClient (agent-framework-foundry) — model bridge, or the AI gateway
+    via model_client.build_chat_client when AI_GATEWAY_OPENAI_BASE_URL is set
   - Agent (agent-framework-core)                — agent definition + tools
   - ResponsesHostServer (agent-framework-foundry-hosting) — HTTP host
 
@@ -31,7 +32,6 @@ from pathlib import Path
 
 import httpx2
 from agent_framework import Agent, MCPStreamableHTTPTool, SkillsProvider
-from agent_framework.foundry import FoundryChatClient
 from agent_framework_foundry_hosting import ResponsesHostServer
 from azure.identity import (
     AzureDeveloperCliCredential,
@@ -40,6 +40,7 @@ from azure.identity import (
     ManagedIdentityCredential,
 )
 from dotenv import load_dotenv
+from model_client import build_chat_client
 
 from schemas import ClinicalResult
 
@@ -165,12 +166,7 @@ def main() -> None:
     else:
         credential = DefaultAzureCredential()
 
-    chat_client = FoundryChatClient(
-        project_endpoint=project_endpoint,
-        model=model,
-        credential=credential,
-        allow_preview=True,
-    )
+    chat_client = build_chat_client(credential, project_endpoint, model)
 
     # default_options enforces ClinicalResult schema on every agent.run() call
     # (token-level JSON constraint, no fence parsing). `store: False` is mandatory

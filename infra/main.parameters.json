@@ -22,6 +22,30 @@
     },
     "imageTag": {
       "value": "${APPLICATION_IMAGE_TAG}"
+    },
+    "deploymentCapacityK": {
+      "value": "${AZURE_OPENAI_DEPLOYMENT_CAPACITY=100}"
+    },
+    "enableAiGateway": {
+      "value": "${ENABLE_AI_GATEWAY=false}"
+    },
+    "aiGatewaySku": {
+      "value": "${AI_GATEWAY_SKU=BasicV2}"
+    },
+    "aiGatewayTokensPerMinute": {
+      "value": "${AI_GATEWAY_TOKENS_PER_MINUTE=75000}"
+    },
+    "aiGatewayPublisherEmail": {
+      "value": "${AI_GATEWAY_PUBLISHER_EMAIL}"
+    },
+    "aiGatewayAllowedClientIds": {
+      "value": "${AI_GATEWAY_ALLOWED_CLIENT_IDS}"
+    },
+    "enableApiCenter": {
+      "value": "${ENABLE_API_CENTER=false}"
+    },
+    "apiCenterLocation": {
+      "value": "${API_CENTER_LOCATION=eastus}"
     }
   }
 }

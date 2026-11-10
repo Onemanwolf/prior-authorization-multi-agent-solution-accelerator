@@ -1,0 +1,72 @@
+<!--
+  AI gateway policy for the "databricks-genie-mcp" API (APIM -> Databricks Genie managed MCP server).
+  Created by scripts/sync_ai_gateway.py (ensure_genie_mcp_route), because the Genie space ID only
+  exists after postprovision.
+
+  Route:   https://<apim>.azure-api.net/mcp/databricks-genie/{spaceId}
+  Backend: https://<workspace>.azuredatabricks.net/api/2.0/mcp/genie/{spaceId}
+
+  Tokens replaced by the sync script:
+    __GENIE_SPACE_ID__   the only Genie space this route may reach
+
+  Named values (shared with the foundry-openai-v1 API):
+    ai-gateway-tenant-id            Entra tenant that issues agent tokens
+    ai-gateway-allowed-client-ids   hosted-agent client IDs; removing an ID is the per-agent kill switch
+
+  The caller's Azure Databricks token (audience 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d) is passed through,
+  so Databricks still enforces the agent's own Unity Catalog / Genie permissions.
+-->
+<policies>
+    <inbound>
+        <base />
+        <!-- 1. Caller authentication: Entra token for Azure Databricks from the hosted agent's identity -->
+        <validate-azure-ad-token tenant-id="{{ai-gateway-tenant-id}}" header-name="Authorization" failed-validation-httpcode="401" failed-validation-error-message="Unauthorized: a valid Entra token is required" output-token-variable-name="callerJwt">
+            <audiences>
+                <audience>2ff814a6-3304-4ab8-85cb-cd0e6f879c1d</audience>
+                <audience>api://2ff814a6-3304-4ab8-85cb-cd0e6f879c1d</audience>
+            </audiences>
+        </validate-azure-ad-token>
+        <set-variable name="callerAppId" value="@{
+            var jwt = (Jwt)context.Variables[&quot;callerJwt&quot;];
+            var appId = jwt.Claims.GetValueOrDefault(&quot;appid&quot;, &quot;&quot;);
+            return string.IsNullOrEmpty(appId) ? jwt.Claims.GetValueOrDefault(&quot;azp&quot;, &quot;&quot;) : appId;
+        }" />
+        <!-- 2. Authorization: only registered hosted-agent identities, and only the curated Genie space -->
+        <choose>
+            <when condition="@{
+                var allowed = (&quot;,&quot; + &quot;{{ai-gateway-allowed-client-ids}}&quot;.Replace(&quot; &quot;, &quot;&quot;) + &quot;,&quot;).ToLowerInvariant();
+                var caller = ((string)context.Variables[&quot;callerAppId&quot;]).ToLowerInvariant();
+                return string.IsNullOrEmpty(caller) || !allowed.Contains(&quot;,&quot; + caller + &quot;,&quot;);
+            }">
+                <return-response>
+                    <set-status code="403" reason="Forbidden" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>{"error":{"code":"AgentNotAuthorized","message":"This identity is not registered with the AI gateway."}}</set-body>
+                </return-response>
+            </when>
+            <when condition="@(!string.Equals(context.Request.MatchedParameters.GetValueOrDefault(&quot;spaceId&quot;, &quot;&quot;), &quot;__GENIE_SPACE_ID__&quot;, StringComparison.OrdinalIgnoreCase))">
+                <return-response>
+                    <set-status code="404" reason="Not Found" />
+                    <set-header name="Content-Type" exists-action="override">
+                        <value>application/json</value>
+                    </set-header>
+                    <set-body>{"error":{"code":"GenieSpaceNotRouted","message":"This Genie space is not exposed through the AI gateway."}}</set-body>
+                </return-response>
+            </when>
+        </choose>
+        <!-- 3. Light per-agent call limit for the MCP route (Genie queries are long-running and polled) -->
+        <rate-limit-by-key calls="120" renewal-period="60" counter-key="@(&quot;genie-&quot; + (string)context.Variables[&quot;callerAppId&quot;])" />
+    </inbound>
+    <backend>
+        <!-- buffer-response=false keeps MCP streamable HTTP (SSE) responses flowing -->
+        <forward-request timeout="180" buffer-response="false" />
+    </backend>
+    <outbound>
+        <base />
+    </outbound>
+    <on-error>
+        <base />
+    </on-error>
+</policies>

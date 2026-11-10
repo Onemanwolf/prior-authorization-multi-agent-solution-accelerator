@@ -2,7 +2,6 @@ import os
 
 import httpx2
 from agent_framework import Agent, MCPStreamableHTTPTool
-from agent_framework.foundry import FoundryChatClient
 from agent_framework_foundry_hosting import ResponsesHostServer
 from azure.identity import (
     AzureDeveloperCliCredential,
@@ -12,7 +11,8 @@ from azure.identity import (
 )
 from dotenv import load_dotenv
 
-from databricks_auth import DatabricksManagedIdentityAuth, mcp_endpoint
+from databricks_auth import DatabricksManagedIdentityAuth, gateway_mcp_endpoint, mcp_endpoint
+from model_client import build_chat_client
 
 
 INSTRUCTIONS = (
@@ -48,8 +48,8 @@ def main():
     explicit = os.environ.get('OTEL_CONNECTION_STRING')
     if 'InstrumentationKey=' not in os.environ.get('APPLICATIONINSIGHTS_CONNECTION_STRING', ''):
         if explicit:
-            os.environ['APPLICATIONINSIGHTS_CONNECTION_STRING'] = explicit
-        else:
+           os.environ['APPLICATIONINSIGHTS_CONNECTION_STRING'] = explicit
+         else:
             os.environ.pop('APPLICATIONINSIGHTS_CONNECTION_STRING', None)
     if os.environ.get('APPLICATIONINSIGHTS_CONNECTION_STRING'):
         from agent_framework.observability import enable_instrumentation
@@ -60,10 +60,14 @@ def main():
         ManagedIdentityCredential(client_id=client_id),
         AzureDeveloperCliCredential(tenant_id=os.environ.get('AZURE_TENANT_ID'), process_timeout=60),
     ) if client_id else DefaultAzureCredential()
-    endpoint = mcp_endpoint(os.environ['DATABRICKS_HOST'], os.environ['DATABRICKS_GENIE_SPACE_ID'])
+    # AI_GATEWAY_GENIE_MCP_URL (set when the AI gateway is enabled) routes Genie
+    # MCP calls through APIM; otherwise the agent calls Databricks directly.
+    gateway_url = os.environ.get('AI_GATEWAY_GENIE_MCP_URL', '').strip() or None
+    endpoint = (gateway_mcp_endpoint(gateway_url) if gateway_url
+                else mcp_endpoint(os.environ['DATABRICKS_HOST'], os.environ['DATABRICKS_GENIE_SPACE_ID']))
     databricks_credential = ManagedIdentityCredential(client_id=client_id)
     http_client = httpx2.AsyncClient(
-        auth=DatabricksManagedIdentityAuth(os.environ['DATABRICKS_HOST'], databricks_credential),
+        auth=DatabricksManagedIdentityAuth(os.environ['DATABRICKS_HOST'], databricks_credential, gateway_url),
         timeout=httpx2.Timeout(180.0), follow_redirects=False,
     )
     tool = MCPStreamableHTTPTool(
@@ -72,11 +76,11 @@ def main():
         url=endpoint, http_client=http_client, load_prompts=False,
         additional_tool_argument_names=['conversation_id'],
     )
-    chat_client = FoundryChatClient(
-        project_endpoint=os.environ.get('FOUNDRY_PROJECT_ENDPOINT') or os.environ['AZURE_AI_PROJECT_ENDPOINT'],
-        model=os.environ.get('MODEL_DEPLOYMENT_NAME') or os.environ['AZURE_OPENAI_DEPLOYMENT_NAME'],
-        credential=credential, allow_preview=True,
-    )
+    chat_client = build_chat_client(
+        credential,
+        os.environ.get('FOUNDRY_PROJECT_ENDPOINT') or os.environ['AZURE_AI_PROJECT_ENDPOINT'],
+        os.environ.get('MODEL_DEPLOYMENT_NAME') or os.environ['AZURE_OPENAI_DEPLOYMENT_NAME'],
+   )
     agent = Agent(
         client=chat_client, name='supply-pricing-agent', id='supply-pricing-agent',
         instructions=INSTRUCTIONS, tools=[tool], default_options={'store': False},
