@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "environmentName": {
+      "value": "${AZURE_ENV_NAME}"
+    },
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "principalId": {
+      "value": "${AZURE_PRINCIPAL_ID}"
+    },
+    "principalType": {
+      "value": "${AZURE_PRINCIPAL_TYPE=User}"
+    },
+    "addressSpace": {
+      "value": "${NETWORK_ADDRESS_SPACE=10.50.0.0/22}"
+    },
+    "jumpboxUsersGroupId": {
+      "value": "${JUMPBOX_USERS_GROUP_ID}"
+    },
+    "jumpboxDesktop": {
+      "value": "${JUMPBOX_DESKTOP=false}"
+    },
+    "jumpboxVmSize": {
+      "value": "${JUMPBOX_VM_SIZE}"
+    },
+    "jumpboxAdminUsername": {
+      "value": "${JUMPBOX_ADMIN_USERNAME=azureadmin}"
+    },
+    "jumpboxSshPublicKey": {
+      "value": "${JUMPBOX_SSH_PUBLIC_KEY}"
+    },
+    "jumpboxShutdownTime": {
+      "value": "${JUMPBOX_SHUTDOWN_TIME=1900}"
+    },
+    "jumpboxTimeZone": {
+      "value": "${JUMPBOX_TIMEZONE=UTC}"
+    },
+    "keyVaultPurgeProtection": {
+      "value": "${JUMPBOX_KEY_VAULT_PURGE_PROTECTION=false}"
+    }
+  }
+}

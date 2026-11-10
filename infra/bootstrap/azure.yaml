@@ -1,0 +1,49 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+#
+# Spec 002, Stage 1: network bootstrap (VNet, NSGs, NAT, private DNS, Bastion,
+# Key Vault, Ubuntu jumpbox). Run from a laptop in this folder:
+#   cd infra/bootstrap && azd env new <name> && azd up
+# Then deploy the main template from the jumpbox (see README.md).
+
+requiredVersions:
+  azd: ">= 1.37.0"
+name: prior-auth-maf-network
+metadata:
+  template: prior-auth-maf-network@1.0
+infra:
+  provider: bicep
+  path: .
+  module: main
+hooks:
+  preprovision:
+    windows:
+      shell: pwsh
+      run: |
+        $py = if (Get-Command python -ErrorAction SilentlyContinue) { 'python' } elseif (Get-Command py -ErrorAction SilentlyContinue) { 'py -3' } else { Write-Host 'ERROR: Python 3 not found on PATH' -ForegroundColor Red; exit 1 }
+        Invoke-Expression "$py scripts/hooks.py preprovision"
+        exit $LASTEXITCODE
+      continueOnError: false
+      interactive: true
+    posix:
+      shell: sh
+      run: |
+        PY=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
+        [ -n "$PY" ] || { echo "ERROR: Python 3 not found on PATH"; exit 1; }
+        "$PY" scripts/hooks.py preprovision
+      continueOnError: false
+      interactive: true
+  postprovision:
+    windows:
+      shell: pwsh
+      run: |
+        $py = if (Get-Command python -ErrorAction SilentlyContinue) { 'python' } else { 'py -3' }
+        Invoke-Expression "$py scripts/hooks.py postprovision"
+      continueOnError: true
+      interactive: true
+    posix:
+      shell: sh
+      run: |
+        PY=$(command -v python3 2>/dev/null || command -v python 2>/dev/null)
+        "$PY" scripts/hooks.py postprovision
+      continueOnError: true
+      interactive: true

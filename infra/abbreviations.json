@@ -5,5 +5,16 @@
   "insightsComponents": "appi-",
   "appManagedEnvironments": "cae-",
   "appContainerApps": "ca-",
-  "aiFoundry": "aif-"
+  "aiFoundry": "aif-",
+  "apiManagementService": "apim-",
+  "apiCenterService": "apic-",
+  "networkVirtualNetworks": "vnet-",
+  "networkNetworkSecurityGroups": "nsg-",
+  "networkNatGateways": "ng-",
+  "networkPublicIPAddresses": "pip-",
+  "networkBastionHosts": "bas-",
+  "networkPrivateEndpoints": "pe-",
+  "computeVirtualMachines": "vm-",
+  "networkNetworkInterfaces": "nic-",
+  "keyVaultVaults": "kv-"
 }
