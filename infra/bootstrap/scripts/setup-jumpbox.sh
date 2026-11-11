@@ -288,16 +288,21 @@ EOF
 # -- Desktop mode ------------------------------------------------------------
 
 install_desktop() {
-  "${APT[@]}" install ubuntu-desktop-minimal xrdp || return 1
+  # XFCE, not GNOME: the VM has no GPU, and GNOME's effects over xrdp were slow
+  # (gnome-shell + Edge GPU emulation used most of the CPU on a D4s_v5).
+  "${APT[@]}" install xfce4 xfce4-terminal dbus-x11 xrdp || return 1
   adduser xrdp ssl-cert
-  # xrdp doesn't need the local display manager; boot to multi-user to save memory.
+  # xrdp doesn't need a local display manager; boot to multi-user to save memory.
   systemctl set-default multi-user.target
 
-  # GNOME session settings for xrdp sessions.
-  cat > /etc/skel/.xsessionrc <<'EOF'
-export GNOME_SHELL_SESSION_MODE=ubuntu
-export XDG_CURRENT_DESKTOP=ubuntu:GNOME
-export XDG_CONFIG_DIRS=/etc/xdg/xdg-ubuntu:/etc/xdg
+  # xrdp starts ~/.xsession through /etc/X11/Xsession.
+  echo "xfce4-session" > /etc/skel/.xsession
+  [ -d /home/jumpuser ] && echo "xfce4-session" > /home/jumpuser/.xsession && chown jumpuser:jumpuser /home/jumpuser/.xsession
+
+  # Edge on a GPU-less VM: no GPU emulation (SwiftShader), no background apps.
+  mkdir -p /etc/opt/edge/policies/managed
+  cat > /etc/opt/edge/policies/managed/jumpbox.json <<'EOF'
+{ "HardwareAccelerationModeEnabled": false, "BackgroundModeEnabled": false, "StartupBoostEnabled": false }
 EOF
   # Avoid repeated "authentication required to create a color managed device" prompts over RDP.
   mkdir -p /etc/polkit-1/rules.d
@@ -342,6 +347,15 @@ EOF
   systemctl enable xrdp && systemctl restart xrdp
 }
 
+# Headless mode on a VM that had the desktop: stop RDP so only SSH is listening.
+disable_desktop() {
+  if systemctl list-unit-files xrdp.service >/dev/null 2>&1 && systemctl is-enabled xrdp >/dev/null 2>&1; then
+    systemctl disable --now xrdp xrdp-sesman
+    echo "xrdp disabled (headless mode)"
+  fi
+  return 0
+}
+
 create_desktop_user() {
   if ! id jumpuser >/dev/null 2>&1; then
     useradd --create-home --shell /bin/bash --groups docker,users jumpuser || return 1
@@ -368,8 +382,10 @@ step "login profile"                 configure_login_profile
 step "jumpbox-check"                 install_jumpbox_check
 step "jumpbox-rotate-password"       install_rotate_password
 if [ "$JUMPBOX_DESKTOP" = "true" ]; then
-  step "desktop (GNOME, xrdp, Edge, VS Code)" install_desktop
+  step "desktop (XFCE, xrdp, Edge, VS Code)"  install_desktop
   step "desktop user and Key Vault password"  create_desktop_user
+else
+  step "headless (desktop off)"               disable_desktop
 fi
 
 if [ "${#FAILED[@]}" -eq 0 ]; then
