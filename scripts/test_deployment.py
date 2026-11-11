@@ -34,7 +34,8 @@ class DeploymentConfigurationTests(unittest.TestCase):
                 self.assertEqual(service["name"], name)
                 self.assertEqual(service["kind"], "hosted")
                 self.assertEqual(service["host"], "azure.ai.agent")
-                self.assertTrue(service["docker"]["remoteBuild"])
+                # Local Docker builds: a private registry (Spec 002) can't be reached by ACR Tasks.
+                self.assertFalse(service["docker"]["remoteBuild"])
                 self.assertEqual(service["protocols"], [{"protocol": "responses", "version": "2.0.0"}])
                 for legacy in ("config", "$ref", "resources", "environment_variables", "env_vars"):
                     self.assertNotIn(legacy, service)

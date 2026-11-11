@@ -48,8 +48,8 @@ def main():
     explicit = os.environ.get('OTEL_CONNECTION_STRING')
     if 'InstrumentationKey=' not in os.environ.get('APPLICATIONINSIGHTS_CONNECTION_STRING', ''):
         if explicit:
-           os.environ['APPLICATIONINSIGHTS_CONNECTION_STRING'] = explicit
-         else:
+            os.environ['APPLICATIONINSIGHTS_CONNECTION_STRING'] = explicit
+        else:
             os.environ.pop('APPLICATIONINSIGHTS_CONNECTION_STRING', None)
     if os.environ.get('APPLICATIONINSIGHTS_CONNECTION_STRING'):
         from agent_framework.observability import enable_instrumentation

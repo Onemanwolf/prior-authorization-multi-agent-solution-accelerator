@@ -46,6 +46,21 @@
     },
     "apiCenterLocation": {
       "value": "${API_CENTER_LOCATION=eastus}"
+    },
+    "enablePrivateNetworking": {
+      "value": "${ENABLE_PRIVATE_NETWORKING=false}"
+    },
+    "networkResourceGroup": {
+      "value": "${NETWORK_RESOURCE_GROUP}"
+    },
+    "networkVnetName": {
+      "value": "${NETWORK_VNET_NAME}"
+    },
+    "dnsZoneResourceGroup": {
+      "value": "${NETWORK_DNS_ZONE_RESOURCE_GROUP}"
+    },
+    "aiGatewayPublicNetworkAccess": {
+      "value": "${AI_GATEWAY_PUBLIC_ACCESS=Enabled}"
     }
   }
 }

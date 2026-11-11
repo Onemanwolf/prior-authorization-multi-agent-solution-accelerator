@@ -75,6 +75,25 @@ param enableApiCenter string = 'false'
 ])
 param apiCenterLocation string = 'eastus'
 
+// ── Private network mode — Specs/002-private-network.md ─────────────────────
+// Needs the network from infra/bootstrap and must run from inside it (jumpbox).
+
+@description('Set to true to deploy with private endpoints, Foundry network injection and public access disabled')
+param enablePrivateNetworking string = 'false'
+
+@description('Resource group of the network created by infra/bootstrap')
+param networkResourceGroup string = ''
+
+@description('VNet created by infra/bootstrap (subnets are looked up by name)')
+param networkVnetName string = ''
+
+@description('Resource group holding the privatelink DNS zones (defaults to networkResourceGroup)')
+param dnsZoneResourceGroup string = ''
+
+@description('APIM public network access. The postprovision hook sets this to Disabled after the first private deployment.')
+@allowed(['Enabled', 'Disabled'])
+param aiGatewayPublicNetworkAccess string = 'Enabled'
+
 // MCP server URLs (ICD-10, PubMed, ClinicalTrials.gov, NPI Registry, CMS Coverage)
 // are configured in each root azure.yaml service's env (`MCP_ICD10_CODES`, `MCP_PUBMED`,
 // `MCP_CLINICAL_TRIALS`, `MCP_NPI_REGISTRY`, `MCP_CMS_COVERAGE`) and consumed
@@ -90,6 +109,34 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 var tags = {
   'azd-env-name': environmentName
   'solution-accelerator': 'prior-auth-maf'
+}
+
+// Private mode: network and DNS from infra/bootstrap (plain strings, so nothing is
+// resolved when private mode is off).
+var isPrivate = enablePrivateNetworking == 'true'
+var vnetId = '/subscriptions/${subscription().subscriptionId}/resourceGroups/${networkResourceGroup}/providers/Microsoft.Network/virtualNetworks/${networkVnetName}'
+var subnetIds = {
+  agent: '${vnetId}/subnets/snet-agent'
+  mcp: '${vnetId}/subnets/snet-mcp'
+  pe: '${vnetId}/subnets/snet-pe'
+  apim: '${vnetId}/subnets/snet-apim'
+}
+var dnsZoneBase = '/subscriptions/${subscription().subscriptionId}/resourceGroups/${empty(dnsZoneResourceGroup) ? networkResourceGroup : dnsZoneResourceGroup}/providers/Microsoft.Network/privateDnsZones'
+var dnsZoneIds = {
+  cognitiveServices: '${dnsZoneBase}/privatelink.cognitiveservices.azure.com'
+  openai: '${dnsZoneBase}/privatelink.openai.azure.com'
+  aiServices: '${dnsZoneBase}/privatelink.services.ai.azure.com'
+  acr: '${dnsZoneBase}/privatelink.azurecr.io'
+  blob: '${dnsZoneBase}/privatelink.blob.${environment().suffixes.storage}'
+  cosmos: '${dnsZoneBase}/privatelink.documents.azure.com'
+  search: '${dnsZoneBase}/privatelink.search.windows.net'
+  apim: '${dnsZoneBase}/privatelink.azure-api.net'
+  monitor: '${dnsZoneBase}/privatelink.monitor.azure.com'
+  oms: '${dnsZoneBase}/privatelink.oms.opinsights.azure.com'
+  ods: '${dnsZoneBase}/privatelink.ods.opinsights.azure.com'
+  agentsvc: '${dnsZoneBase}/privatelink.agentsvc.azure-automation.net'
+  databricks: '${dnsZoneBase}/privatelink.azuredatabricks.net'
+  dfs: '${dnsZoneBase}/privatelink.dfs.${environment().suffixes.storage}'
 }
 
 // ── Resource Group ──────────────────────────────────────────────────────────
@@ -110,6 +157,14 @@ module databricks './modules/databricks.bicep' = if (enableDatabricks == 'true')
     location: location
     managedResourceGroupName: 'rg-dbw-managed-${resourceToken}'
     tags: tags
+    enablePrivateNetworking: isPrivate
+    vnetId: vnetId
+    peSubnetId: subnetIds.pe
+    dnsZoneIds: {
+      databricks: dnsZoneIds.databricks
+      blob: dnsZoneIds.blob
+      dfs: dnsZoneIds.dfs
+    }
   }
 }
 
@@ -120,6 +175,9 @@ module containerRegistry './modules/container-registry.bicep' = {
     name: '${abbrs.containerRegistryRegistries}${resourceToken}'
     location: location
     tags: tags
+    enablePrivateNetworking: isPrivate
+    peSubnetId: subnetIds.pe
+    dnsZoneId: dnsZoneIds.acr
   }
 }
 
@@ -133,6 +191,9 @@ module monitoring './modules/monitoring.bicep' = {
     appInsightsName: '${abbrs.insightsComponents}${resourceToken}'
     location: location
     tags: tags
+    enablePrivateNetworking: isPrivate
+    peSubnetId: subnetIds.pe
+    amplsDnsZoneIds: [dnsZoneIds.monitor, dnsZoneIds.oms, dnsZoneIds.ods, dnsZoneIds.agentsvc, dnsZoneIds.blob]
   }
 }
 
@@ -150,6 +211,31 @@ module aiFoundry './modules/ai-foundry.bicep' = {
     deploymentName: azureOpenAIDeploymentName
     deploymentSkuName: deploymentSkuName
     deploymentCapacityK: int(deploymentCapacityK)
+    enablePrivateNetworking: isPrivate
+    agentSubnetId: subnetIds.agent
+    peSubnetId: subnetIds.pe
+    accountDnsZoneIds: [dnsZoneIds.cognitiveServices, dnsZoneIds.openai, dnsZoneIds.aiServices]
+  }
+}
+
+// Private mode: agent data in our own private Cosmos DB, Storage and AI Search
+// (Foundry Agent Service standard setup, required for network isolation).
+module foundryStandardSetup './modules/foundry-standard-setup.bicep' = if (isPrivate) {
+  name: 'foundry-standard-setup'
+  scope: rg
+  params: {
+    location: location
+    tags: tags
+    resourceToken: resourceToken
+    accountName: aiFoundry.outputs.accountName
+    projectName: aiFoundry.outputs.projectName
+    projectPrincipalId: aiFoundry.outputs.projectPrincipalId
+    peSubnetId: subnetIds.pe
+    dnsZoneIds: {
+      blob: dnsZoneIds.blob
+      cosmos: dnsZoneIds.cosmos
+      search: dnsZoneIds.search
+    }
   }
 }
 
@@ -164,7 +250,13 @@ module aiGateway './modules/apim-ai-gateway.bicep' = if (enableAiGateway == 'tru
     name: '${abbrs.apiManagementService}${resourceToken}'
     location: location
     tags: tags
-    skuName: aiGatewaySku
+    // Private mode needs StandardV2 (BasicV2 has no private endpoint or VNet integration).
+    skuName: isPrivate ? 'StandardV2' : aiGatewaySku
+    enablePrivateNetworking: isPrivate
+    apimSubnetId: subnetIds.apim
+    peSubnetId: subnetIds.pe
+    gatewayDnsZoneId: dnsZoneIds.apim
+    publicNetworkAccess: aiGatewayPublicNetworkAccess
     publisherEmail: empty(aiGatewayPublisherEmail) ? 'ai-gateway-admin@example.com' : aiGatewayPublisherEmail
     foundryAccountName: aiFoundry.outputs.accountName
     tokensPerMinute: int(aiGatewayTokensPerMinute)
@@ -207,6 +299,9 @@ module containerAppsEnv './modules/container-apps-env.bicep' = {
     location: location
     tags: tags
     logAnalyticsWorkspaceId: monitoring.outputs.logAnalyticsWorkspaceId
+    enablePrivateNetworking: isPrivate
+    infrastructureSubnetId: subnetIds.mcp
+    vnetId: vnetId
   }
 }
 
@@ -328,5 +423,8 @@ output AI_GATEWAY_URL string = enableAiGateway == 'true' ? aiGateway!.outputs.ga
 output AI_GATEWAY_OPENAI_BASE_URL string = enableAiGateway == 'true' ? aiGateway!.outputs.openAiV1BaseUrl : ''
 output API_CENTER_NAME string = enableApiCenter == 'true' ? apiCenter!.outputs.name : ''
 output API_CENTER_MCP_REGISTRY_URL string = enableApiCenter == 'true' ? apiCenter!.outputs.mcpRegistryUrl : ''
+// Private mode
+output PRIVATE_NETWORKING string = enablePrivateNetworking
+output CONTAINER_APPS_STATIC_IP string = isPrivate ? containerAppsEnv.outputs.staticIp : ''
 output frontendUrl string = frontend.outputs.fqdn
 output backendUrl string = backend.outputs.fqdn

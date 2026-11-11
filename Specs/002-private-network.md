@@ -2,7 +2,7 @@
 
 | | |
 |---|---|
-| **Status** | Draft for review (rev 2). Branch `private-network` (based on `Ai-gateway`). Phase 1 (network bootstrap) built in `infra/bootstrap/`, not yet deployed. |
+| **Status** | Draft for review (rev 2). Branch `private-network` (based on `Ai-gateway`). Phase 1 (network + jumpbox) deployed to `rg-wc01_pai_ai_network`. Phases 2-4 (private Foundry with network injection and standard setup, private ACR, internal Container Apps, AMPLS, private APIM StandardV2, private Databricks) built behind `ENABLE_PRIVATE_NETWORKING`; first private deployment pending. Images build locally with Docker (`remoteBuild: false`). |
 | **Date** | 2026-11-10 (rev 2: Linux jumpbox; subnets aligned with the research document's network design; separate resource groups §5.8) |
 | **Owner** | Tim Oleson |
 | **Template** | `prior-auth-maf` (this repo, root `azure.yaml`) |

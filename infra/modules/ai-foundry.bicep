@@ -35,6 +35,20 @@ param deploymentSkuName string = 'GlobalStandard'
 @description('Capacity in thousands of tokens per minute (default: 100 = 100K TPM)')
 param deploymentCapacityK int = 100
 
+// -- Private mode (Specs/002-private-network.md section 6.3) --------------------
+
+@description('Private mode: network injection for hosted agents, public access off, private endpoint')
+param enablePrivateNetworking bool = false
+
+@description('Delegated agent subnet (snet-agent). Network injection can only be set when the account is created.')
+param agentSubnetId string = ''
+
+@description('Private endpoint subnet (snet-pe)')
+param peSubnetId string = ''
+
+@description('DNS zone IDs for the account endpoint: cognitiveservices, openai, services.ai')
+param accountDnsZoneIds array = []
+
 // ── Microsoft Foundry Resource ──────────────────────────────────────────────
 
 resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-12-01' = {
@@ -52,7 +66,34 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-12-01' = {
     allowProjectManagement: true
     customSubDomainName: 'foundry-${name}'
     disableLocalAuth: true
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: enablePrivateNetworking ? 'Disabled' : 'Enabled'
+    networkAcls: enablePrivateNetworking ? {
+      defaultAction: 'Deny'
+      bypass: 'AzureServices'
+      ipRules: []
+      virtualNetworkRules: []
+    } : null
+    // Hosted agents run in snet-agent and send their outbound traffic through the VNet.
+    networkInjections: enablePrivateNetworking ? [
+      {
+        scenario: 'agent'
+        subnetArmId: agentSubnetId
+        useMicrosoftManagedNetwork: false
+      }
+    ] : null
+  }
+}
+
+module accountPrivateEndpoint './private-endpoint.bicep' = if (enablePrivateNetworking) {
+  name: 'pe-foundry'
+  params: {
+    name: 'pe-${foundryAccount.name}'
+    location: location
+    tags: tags
+    subnetId: peSubnetId
+    targetResourceId: foundryAccount.id
+    groupId: 'account'
+    dnsZoneIds: accountDnsZoneIds
   }
 }
 
@@ -115,6 +156,7 @@ resource modelDeployment 'Microsoft.CognitiveServices/accounts/deployments@2025-
 // ── Outputs ─────────────────────────────────────────────────────────────────
 
 output accountName string = foundryAccount.name
+output accountId string = foundryAccount.id
 output projectName string = foundryProject.name
 output projectId string = foundryProject.id
 output endpoint string = foundryAccount.properties.endpoint

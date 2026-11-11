@@ -62,6 +62,21 @@ param appInsightsInstrumentationKey string
 @description('Log Analytics workspace ID for gateway and LLM logs')
 param logAnalyticsWorkspaceId string
 
+// -- Private mode (Specs/002-private-network.md section 6.4) --------------------
+
+@description('Private mode: StandardV2 with outbound VNet integration and an inbound private endpoint')
+param enablePrivateNetworking bool = false
+
+@description('Outbound integration subnet (snet-apim, delegated to Microsoft.Web/serverFarms)')
+param apimSubnetId string = ''
+
+param peSubnetId string = ''
+param gatewayDnsZoneId string = ''
+
+@description('APIM cannot be created with public access disabled. The postprovision hook disables it once the private endpoint exists and sets AI_GATEWAY_PUBLIC_ACCESS=Disabled so later provisions keep it off.')
+@allowed(['Enabled', 'Disabled'])
+param publicNetworkAccess string = 'Enabled'
+
 // Cognitive Services OpenAI User: inference only, no management rights
 var cognitiveServicesOpenAIUserRoleId = '5e0bd9bd-7b93-4f28-af87-19fc36ad61bd'
 var backendId = 'foundry-openai-v1'
@@ -83,9 +98,30 @@ resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
   identity: {
     type: 'SystemAssigned'
   }
-  properties: {
+  properties: union({
     publisherEmail: publisherEmail
     publisherName: publisherName
+  }, enablePrivateNetworking ? {
+    // Outbound: APIM reaches the Foundry and Databricks private endpoints through the VNet.
+    virtualNetworkType: 'External'
+    virtualNetworkConfiguration: {
+      subnetResourceId: apimSubnetId
+    }
+    publicNetworkAccess: publicNetworkAccess
+  } : {})
+}
+
+// Inbound: hosted agents call the gateway through this private endpoint.
+module gatewayPrivateEndpoint './private-endpoint.bicep' = if (enablePrivateNetworking) {
+  name: 'pe-apim'
+  params: {
+    name: 'pe-${name}'
+    location: location
+    tags: tags
+    subnetId: peSubnetId
+    targetResourceId: apim.id
+    groupId: 'Gateway'
+    dnsZoneIds: [gatewayDnsZoneId]
   }
 }
 
