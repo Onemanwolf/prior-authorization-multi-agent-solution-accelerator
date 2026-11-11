@@ -64,6 +64,9 @@
     },
     "foundryAllowedIps": {
       "value": "${FOUNDRY_ALLOWED_IPS}"
+    },
+    "aiSearchLocation": {
+      "value": "${AI_SEARCH_LOCATION}"
     }
   }
 }

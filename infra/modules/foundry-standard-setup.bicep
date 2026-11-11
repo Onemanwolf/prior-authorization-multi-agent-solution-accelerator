@@ -23,6 +23,9 @@ param dnsZoneIds object
 @description('AI Search SKU (standard matches the Microsoft sample)')
 param searchSku string = 'standard'
 
+@description('AI Search region. Defaults to the deployment region; set another region when it has no Search capacity (the private endpoint stays in the VNet region).')
+param searchLocation string = location
+
 var storageName = 'st${resourceToken}'
 var cosmosName = 'cosmos-${resourceToken}'
 var searchName = 'srch-${resourceToken}'
@@ -77,7 +80,7 @@ resource cosmos 'Microsoft.DocumentDB/databaseAccounts@2024-11-15' = {
 
 resource search 'Microsoft.Search/searchServices@2024-06-01-preview' = {
   name: searchName
-  location: location
+  location: searchLocation
   tags: tags
   sku: { name: searchSku }
   identity: { type: 'SystemAssigned' }
@@ -229,7 +232,7 @@ resource searchConnection 'Microsoft.CognitiveServices/accounts/projects/connect
     metadata: {
       ApiType: 'Azure'
       ResourceId: search.id
-      location: location
+      location: searchLocation
     }
   }
 }

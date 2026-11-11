@@ -90,6 +90,9 @@ param networkVnetName string = ''
 @description('Resource group holding the privatelink DNS zones (defaults to networkResourceGroup)')
 param dnsZoneResourceGroup string = ''
 
+@description('Private mode: region for the agent AI Search service when the main region has no Search capacity (empty = same region)')
+param aiSearchLocation string = ''
+
 @description('Private mode: comma-separated public IPs/CIDRs allowed to reach Foundry (for example VPN egress IPs), so the Foundry portal works from laptops. Empty = Foundry public access disabled.')
 param foundryAllowedIps string = ''
 
@@ -235,6 +238,7 @@ module foundryStandardSetup './modules/foundry-standard-setup.bicep' = if (isPri
     projectName: aiFoundry.outputs.projectName
     projectPrincipalId: aiFoundry.outputs.projectPrincipalId
     peSubnetId: subnetIds.pe
+    searchLocation: empty(aiSearchLocation) ? location : aiSearchLocation
     dnsZoneIds: {
       blob: dnsZoneIds.blob
       cosmos: dnsZoneIds.cosmos
