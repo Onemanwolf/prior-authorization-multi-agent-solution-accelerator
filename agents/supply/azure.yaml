@@ -9,7 +9,7 @@ services:
     host: azure.ai.agent
     language: docker
     docker:
-      remoteBuild: true
+      remoteBuild: false
     name: supply-pricing-agent
     kind: hosted
     protocols:
