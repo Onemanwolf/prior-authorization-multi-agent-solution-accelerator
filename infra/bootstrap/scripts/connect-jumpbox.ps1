@@ -31,7 +31,10 @@ param(
   [string]$HostAlias = 'jumpbox'
 )
 
-$ErrorActionPreference = 'Stop'
+# 'Continue', not 'Stop': Windows PowerShell 5.1 turns any stderr output from native
+# commands (az prints informational messages there) into errors under 'Stop'.
+# Failures are checked with $LASTEXITCODE instead.
+$ErrorActionPreference = 'Continue'
 
 function Get-AzdValue([string]$Name) {
   $value = & azd env get-value $Name 2>$null
