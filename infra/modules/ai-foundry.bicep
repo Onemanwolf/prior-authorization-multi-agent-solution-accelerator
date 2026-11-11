@@ -49,6 +49,12 @@ param peSubnetId string = ''
 @description('DNS zone IDs for the account endpoint: cognitiveservices, openai, services.ai')
 param accountDnsZoneIds array = []
 
+@description('Private mode: public IPs/CIDRs (for example the corporate VPN egress) that may still reach Foundry, so people can use the Foundry portal from laptops. Empty keeps public access disabled.')
+param allowedIpRanges array = []
+
+var restrictedPublicAccess = enablePrivateNetworking && !empty(allowedIpRanges)
+var allowedIpRules = map(allowedIpRanges, ip => { value: ip })
+
 // ── Microsoft Foundry Resource ──────────────────────────────────────────────
 
 resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-12-01' = {
@@ -66,11 +72,13 @@ resource foundryAccount 'Microsoft.CognitiveServices/accounts@2025-12-01' = {
     allowProjectManagement: true
     customSubDomainName: 'foundry-${name}'
     disableLocalAuth: true
-    publicNetworkAccess: enablePrivateNetworking ? 'Disabled' : 'Enabled'
+    // Private mode: disabled, or "restricted" (deny by default, allow-listed IPs only)
+    // when allowedIpRanges is set. Either satisfies "public access disabled or restricted".
+    publicNetworkAccess: !enablePrivateNetworking || restrictedPublicAccess ? 'Enabled' : 'Disabled'
     networkAcls: enablePrivateNetworking ? {
       defaultAction: 'Deny'
       bypass: 'AzureServices'
-      ipRules: []
+      ipRules: allowedIpRules
       virtualNetworkRules: []
     } : null
     // Hosted agents run in snet-agent and send their outbound traffic through the VNet.

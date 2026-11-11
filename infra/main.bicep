@@ -90,6 +90,9 @@ param networkVnetName string = ''
 @description('Resource group holding the privatelink DNS zones (defaults to networkResourceGroup)')
 param dnsZoneResourceGroup string = ''
 
+@description('Private mode: comma-separated public IPs/CIDRs allowed to reach Foundry (for example VPN egress IPs), so the Foundry portal works from laptops. Empty = Foundry public access disabled.')
+param foundryAllowedIps string = ''
+
 @description('APIM public network access. The postprovision hook sets this to Disabled after the first private deployment.')
 @allowed(['Enabled', 'Disabled'])
 param aiGatewayPublicNetworkAccess string = 'Enabled'
@@ -215,6 +218,7 @@ module aiFoundry './modules/ai-foundry.bicep' = {
     agentSubnetId: subnetIds.agent
     peSubnetId: subnetIds.pe
     accountDnsZoneIds: [dnsZoneIds.cognitiveServices, dnsZoneIds.openai, dnsZoneIds.aiServices]
+    allowedIpRanges: filter(map(split(foundryAllowedIps, ','), ip => trim(ip)), ip => !empty(ip))
   }
 }
 

@@ -61,6 +61,9 @@
     },
     "aiGatewayPublicNetworkAccess": {
       "value": "${AI_GATEWAY_PUBLIC_ACCESS=Enabled}"
+    },
+    "foundryAllowedIps": {
+      "value": "${FOUNDRY_ALLOWED_IPS}"
     }
   }
 }
