@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- Option 1 outline: white on transparent, as Teams requires. -->
+  <path d="M7.5 20 C7.5 13.5 11 9 15.5 9 C20 9 23.5 13.5 23.5 20 Z" fill="#FFFFFF"/>
+  <rect x="4.5" y="19" width="22" height="3.2" rx="1.6" fill="#FFFFFF"/>
+  <path d="M7 25.2 H25 L24 27.2 H6 Z" fill="#FFFFFF"/>
+  <path d="M26 2.5 Q26.5 5.5 29.5 6 Q26.5 6.5 26 9.5 Q25.5 6.5 22.5 6 Q25.5 5.5 26 2.5 Z" fill="#FFFFFF"/>
+</svg>

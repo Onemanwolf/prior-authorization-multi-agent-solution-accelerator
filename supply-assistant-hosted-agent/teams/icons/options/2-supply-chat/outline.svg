@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- Option 2 outline: white on transparent, as Teams requires. -->
+  <path d="M9 4 H23 A5 5 0 0 1 28 9 V18 A5 5 0 0 1 23 23 H14 L8 28 L9 23 A5 5 0 0 1 4 18 V9 A5 5 0 0 1 9 4 Z" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linejoin="round"/>
+  <g fill="none" stroke="#FFFFFF" stroke-width="1.5" stroke-linejoin="round">
+    <path d="M16 8 L21 10.5 L16 13 L11 10.5 Z"/>
+    <path d="M11 10.5 V15.5 L16 18 L21 15.5 V10.5"/>
+    <path d="M16 13 V18"/>
+  </g>
+</svg>

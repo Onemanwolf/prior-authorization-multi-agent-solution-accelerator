@@ -1,0 +1,3 @@
+# Built packages; rebuild with `uv run teams/build_package.py`.
+dist/
+__pycache__/

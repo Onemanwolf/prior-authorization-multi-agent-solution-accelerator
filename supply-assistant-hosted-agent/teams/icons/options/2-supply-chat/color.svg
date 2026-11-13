@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <!-- Option 2 "Supply Chat": a supply crate inside a yellow chat bubble. -->
+  <rect width="192" height="192" fill="#171717"/>
+  <path d="M62 34 H130 A26 26 0 0 1 156 60 V114 A26 26 0 0 1 130 140 H88 L56 162 L62 140 A26 26 0 0 1 36 114 V60 A26 26 0 0 1 62 34 Z" fill="#FEC526"/>
+  <g stroke="#FEC526" stroke-width="4" stroke-linejoin="round">
+    <path d="M96 56 L127 71.5 L96 87 L65 71.5 Z" fill="#3A3A3A"/>
+    <path d="M65 71.5 L96 87 V119 L65 103.5 Z" fill="#171717"/>
+    <path d="M127 71.5 L96 87 V119 L127 103.5 Z" fill="#000000"/>
+  </g>
+  <path d="M80.5 63.75 L111.5 79.25" stroke="#FFFFFF" stroke-width="6" stroke-linecap="round"/>
+</svg>

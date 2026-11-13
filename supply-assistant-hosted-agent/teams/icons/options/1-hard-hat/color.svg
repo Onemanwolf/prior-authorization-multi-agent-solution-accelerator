@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="192" viewBox="0 0 192 192">
+  <!-- Option 1 "Hard Hat": the jobsite helper. White hard hat, yellow brand bar, AI spark. -->
+  <defs>
+    <clipPath id="dome">
+      <path d="M50 118 C50 84 70 60 96 60 C122 60 142 84 142 118 Z"/>
+    </clipPath>
+  </defs>
+  <rect width="192" height="192" fill="#171717"/>
+  <path d="M50 118 C50 84 70 60 96 60 C122 60 142 84 142 118 Z" fill="#FFFFFF"/>
+  <rect x="87" y="56" width="18" height="64" fill="#D9D9D9" clip-path="url(#dome)"/>
+  <rect x="34" y="113" width="124" height="15" rx="7.5" fill="#FFFFFF"/>
+  <path d="M46 142 H154 L148 154 H40 Z" fill="#FEC526"/>
+  <path d="M152 30 Q154.5 45.5 170 48 Q154.5 50.5 152 66 Q149.5 50.5 134 48 Q149.5 45.5 152 30 Z" fill="#FEC526"/>
+</svg>

@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- Option 3 outline: white on transparent, as Teams requires. -->
+  <defs>
+    <mask id="check">
+      <rect width="32" height="32" fill="#FFFFFF"/>
+      <path d="M22.3 7.2 L24.3 9.2 L27.8 5.6" fill="none" stroke="#000000" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </mask>
+  </defs>
+  <g fill="none" stroke="#FFFFFF" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M14 8.5 L22 12.5 L14 16.5 L6 12.5 Z"/>
+    <path d="M6 17.5 L14 21.5 L22 17.5"/>
+    <path d="M6 22.5 L14 26.5 L22 22.5"/>
+  </g>
+  <circle cx="25" cy="7.5" r="5.5" fill="#FFFFFF" mask="url(#check)"/>
+</svg>
