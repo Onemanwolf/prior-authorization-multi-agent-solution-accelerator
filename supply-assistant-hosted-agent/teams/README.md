@@ -114,7 +114,7 @@ Two things are needed for each colleague: the agent link, and permission on the 
    - CLI (needs Owner or User Access Administrator on the project):
      ```bash
      az role assignment create --assignee <group-or-user-object-id> --role "Foundry User" \
-       --scope <project resource id>   # .../providers/Microsoft.CognitiveServices/accounts/foundry-aif-jvs7hw2v3w2ek/projects/proj-aif-jvs7hw2v3w2ek
+       --scope <project resource id>   # .../providers/Microsoft.CognitiveServices/accounts/foundry-aif-jvs...ek/projects/proj-aif-jvs...ek
      ```
    Role changes can take a few minutes to apply.
 2. **Send the link.** In Teams open **Apps** → **Your agents**, open Supply Assistant and copy its link, then send it to the colleagues. The link looks like `https://teams.microsoft.com/l/app/<store app id>?source=app-profile-card&templateInstanceId=<manifest id>`. Only the publisher sees the app in the store, so everyone else needs the link. Send it exactly as copied.
@@ -141,13 +141,13 @@ Four pilot colleagues were given access to version 1.0.2 (Shared scope). Their a
    Check again with the list command above. `azd` has no role-assignment command, so this uses `az`, which shares azd's login. The signed-in account needs permission to create role assignments on the project.
 3. **Send the link.** The publisher copied the Teams link from **Apps → Your agents → Supply Assistant**:
    ```
-   https://teams.microsoft.com/l/app/1ef3c012-7ba0-4e29-b6e7-e724183ab93f?source=app-profile-card&templateInstanceId=272e7369-db4a-427f-a9c4-39dcde3880dc
+   https://teams.microsoft.com/l/app/1ef...93f?source=app-profile-card&templateInstanceId=272...dc
    ```
-   Two different ids appear in it. `1ef3c012-…` is the app's id in the Teams catalog (the store id). `272e7369-…` is the app `id` in the generated `manifest.json` (see the example below), so the app in the store is the one built from the 1.0.2 package. The `source=app-profile-card` part looks like a tracking parameter. It is kept because the shorter form was not tested.
+   Two different ids appear in it. `1ef...-…` is the app's id in the Teams catalog (the store id). `272...-…` is the app `id` in the generated `manifest.json` (see the example below), so the app in the store is the one built from the 1.0.2 package. The `source=app-profile-card` part looks like a tracking parameter. It is kept because the shorter form was not tested.
 
    A second, optional link opens the agent in the browser in Microsoft 365 Copilot chat. It uses the `titleId` from the publish response:
    ```
-   https://m365.cloud.microsoft/chat/?titleId=T_173f6ff7-d8f3-7f47-9994-ad75bd4191b0
+   https://m365.cloud.microsoft/chat/?titleId=T_173...1b0
    ```
    Microsoft documents the `chat/?titleId=` format on an Employee Self-Service page, not on the Foundry pages. It has not been confirmed to open this agent, and it does not add the app to Teams. Use the Teams link above for the team.
 4. **Colleague adds and uses it.** They open the Teams link, check that the profile card shows the Supply Assistant, choose **Add**, then chat in the personal chat. Have one colleague try it first. If the first message fails with an authorization error, wait a few minutes after the role assignment and retry.
@@ -178,10 +178,10 @@ Everything below was captured from the real publish. Use it to compare after the
 **Response:**
 
 ```json
-{ "titleId": "T_173f6ff7-d8f3-7f47-9994-ad75bd4191b0", "teamsAppId": "205dd457-7020-4d2c-a6b5-ba12d029106d" }
+{ "titleId": "T_173...1b0", "teamsAppId": "205...06d" }
 ```
 
-The `/zip` preview run before it showed app id `272e7369-db4a-427f-a9c4-39dcde3880dc`, which differs from the `teamsAppId` in the publish response. The Teams link copied from the store contains `templateInstanceId=272e7369-…` and the catalog id `1ef3c012-7ba0-4e29-b6e7-e724183ab93f`, so the live app matches the package preview, and the publish response's `teamsAppId` appears to be a separate Foundry identifier (inferred from the matching id, not confirmed). Still check **Apps → Your agents** in Teams for duplicates after a publish.
+The `/zip` preview run before it showed app id `272...0dc`, which differs from the `teamsAppId` in the publish response. The Teams link copied from the store contains `templateInstanceId=272...-…` and the catalog id `1ef...93f`, so the live app matches the package preview, and the publish response's `teamsAppId` appears to be a separate Foundry identifier (inferred from the matching id, not confirmed). Still check **Apps → Your agents** in Teams for duplicates after a publish.
 
 **Generated `manifest.json`** (from the `/zip` preview, same body):
 
@@ -190,7 +190,7 @@ The `/zip` preview run before it showed app id `272e7369-db4a-427f-a9c4-39dcde38
   "$schema": "https://developer.microsoft.com/json-schemas/teams/v1.29/MicrosoftTeams.schema.json",
   "manifestVersion": "1.29",
   "version": "1.0.2",
-  "id": "272e7369-db4a-427f-a9c4-39dcde3880dc",
+  "id": "272...0dc",
   "developer": {
     "name": "White Cap",
     "websiteUrl": "https://www.whitecap.com/en-us",
@@ -202,16 +202,16 @@ The `/zip` preview run before it showed app id `272e7369-db4a-427f-a9c4-39dcde38
   "icons": { "color": "default-color-icon.png", "outline": "default-outline-icon.png" },
   "accentColor": "#4464ee",
   "validDomains": ["login.microsoftonline.com"],
-  "webApplicationInfo": { "id": "b3d10754-77fb-4db1-a59c-f0118d7743b6", "resource": "api://example.com" },
+  "webApplicationInfo": { "id": "b3d...3b6", "resource": "api://example.com" },
   "bots": [{
-    "botId": "b3d10754-77fb-4db1-a59c-f0118d7743b6",
+    "botId": "b3d...3b6",
     "scopes": ["personal", "team", "groupChat", "copilot"],
     "supportsFiles": true,
     "isNotificationOnly": false
   }],
   "supportsChannelFeatures": "tier1",
   "copilotAgents": { "customEngineAgents": [{
-    "id": "b3d10754-77fb-4db1-a59c-f0118d7743b6",
+    "id": "b3d...3b6",
     "type": "bot",
     "disclaimer": { "text": "This agent uses AI. Please verify important information." }
   }] }
